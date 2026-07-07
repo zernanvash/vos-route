@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "252579133361",
+    "project_id": "vosroute",
+    "storage_bucket": "vosroute.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:252579133361:android:61e3dab59c4c6099982f90",
+        "android_client_info": {
+          "package_name": "com.vos.vosroute"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAnR0MWizkM59wfos9F-zbsdcPw1Xi1icY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

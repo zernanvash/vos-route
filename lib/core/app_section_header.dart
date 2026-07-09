@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_typography.dart';
 
 class AppSectionHeader extends StatelessWidget {
   final String title;
@@ -16,18 +14,21 @@ class AppSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = trailing;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           title,
           style: TextStyle(
-            color: color ?? AppColors.info,
-            fontSize: AppTextStyle.sectionHeader.fontSize,
+            color: color ?? cs.primary,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
           ),
         ),
-        if (trailing != null) trailing!,
+        if (t != null) t,
       ],
     );
   }
@@ -38,6 +39,9 @@ class AppDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Divider(color: AppColors.border, height: 1);
+    return Divider(
+      color: Theme.of(context).colorScheme.outlineVariant,
+      height: 1,
+    );
   }
 }

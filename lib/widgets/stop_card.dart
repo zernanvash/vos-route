@@ -17,6 +17,8 @@ class StopCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     final String title;
     final String subtitle;
     final String status;
@@ -49,37 +51,45 @@ class StopCard extends StatelessWidget {
     }
 
     return Card(
-      color: AppColors.surface,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: AppColors.primary,
-          child: Text('$sequence', style: const TextStyle(color: Colors.white)),
+          backgroundColor: cs.primary.withValues(alpha: 0.15),
+          child: Text(
+            '$sequence',
+            style: TextStyle(
+              color: cs.primary,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
         ),
         title: Row(
           children: [
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: cs.onSurface,
                   fontWeight: FontWeight.w600,
+                  fontSize: 14,
                 ),
               ),
             ),
             if (hasCoords) ...[
               const SizedBox(width: 6),
-              const Icon(Icons.location_on, size: 14, color: AppColors.success),
+              Icon(
+                Icons.location_on_rounded,
+                size: 14,
+                color: AppColors.success,
+              ),
             ],
           ],
         ),
         subtitle: subtitle.isNotEmpty
             ? Text(
                 subtitle,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
               )
             : null,
         trailing: StatusChip(status: status),

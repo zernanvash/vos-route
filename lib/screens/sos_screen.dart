@@ -7,7 +7,6 @@ import '../providers/auth_provider.dart';
 import '../providers/trip_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 
 class SosScreen extends StatefulWidget {
   const SosScreen({super.key});
@@ -65,27 +64,37 @@ class _SosScreenState extends State<SosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Emergency SOS', style: TextStyle(color: Colors.white)),
+        title: const Text('Emergency SOS'),
         backgroundColor: AppColors.errorDark,
-        iconTheme: IconThemeData(color: Colors.white),
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       body: SingleChildScrollView(
         padding: Insets.cardLg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Warning banner ───────────────────────────────────────
             Container(
               padding: Insets.cardLg,
               decoration: BoxDecoration(
-                color: AppColors.errorDark.withValues(alpha: 0.3),
+                color: AppColors.error.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(Insets.cardRadius),
-                border: Border.all(color: AppColors.error),
+                border: Border.all(
+                  color: AppColors.error.withValues(alpha: 0.4),
+                ),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.warning, color: AppColors.error, size: 32),
+                  Icon(Icons.warning_rounded, color: AppColors.error, size: 28),
                   Insets.gapWMd,
                   Expanded(
                     child: Text(
@@ -97,7 +106,14 @@ class _SosScreenState extends State<SosScreen> {
               ),
             ),
             Insets.gapXl,
-            Text('Incident Type', style: AppTextStyle.caption),
+            Text(
+              'Incident Type',
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             Insets.gapSm,
             DropdownButtonFormField<String>(
               initialValue: _incidentType,
@@ -105,12 +121,17 @@ class _SosScreenState extends State<SosScreen> {
                   .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                   .toList(),
               onChanged: (v) => setState(() => _incidentType = v ?? 'Accident'),
-              dropdownColor: AppColors.surface,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration(),
+              decoration: const InputDecoration(),
             ),
             Insets.gapLg,
-            Text('Severity', style: AppTextStyle.caption),
+            Text(
+              'Severity',
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             Insets.gapSm,
             DropdownButtonFormField<String>(
               initialValue: _severity,
@@ -118,48 +139,46 @@ class _SosScreenState extends State<SosScreen> {
                   .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                   .toList(),
               onChanged: (v) => setState(() => _severity = v ?? 'High'),
-              dropdownColor: AppColors.surface,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration(),
+              decoration: const InputDecoration(),
             ),
             Insets.gapLg,
             TextField(
               controller: _descriptionController,
-              style: const TextStyle(color: Colors.white),
               maxLines: 4,
-              decoration: _inputDecoration(hint: 'Describe the situation...'),
+              decoration: const InputDecoration(
+                hintText: 'Describe the situation...',
+              ),
             ),
             Insets.gapLg,
             TextField(
               controller: _contactNameController,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration(hint: 'Contact person (optional)'),
+              decoration: const InputDecoration(
+                hintText: 'Contact person (optional)',
+              ),
             ),
             Insets.gapLg,
             TextField(
               controller: _contactPhoneController,
-              style: const TextStyle(color: Colors.white),
               keyboardType: TextInputType.phone,
-              decoration: _inputDecoration(hint: 'Contact phone (optional)'),
+              decoration: const InputDecoration(
+                hintText: 'Contact phone (optional)',
+              ),
             ),
-            Insets.gapSm,
             if (_lat != null)
               Padding(
-                padding: EdgeInsets.only(bottom: Insets.sm),
+                padding: const EdgeInsets.only(top: Insets.sm),
                 child: Text(
-                  'Location: $_lat, $_lng',
-                  style: AppTextStyle.caption.copyWith(
-                    color: AppColors.textTertiary,
-                  ),
+                  'Location: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
                 ),
               ),
-            Insets.gapLg,
+            Insets.gapXl,
             SizedBox(
               width: double.infinity,
               height: Insets.buttonHeight,
               child: ElevatedButton.icon(
                 onPressed: _isSubmitting ? null : _submitSos,
-                icon: const Icon(Icons.warning, size: 24),
+                icon: const Icon(Icons.warning_rounded, size: 22),
                 label: Text(
                   _isSubmitting ? 'Submitting...' : 'SEND SOS',
                   style: const TextStyle(
@@ -178,19 +197,6 @@ class _SosScreenState extends State<SosScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration({String? hint}) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(color: AppColors.textTertiary),
-      filled: true,
-      fillColor: AppColors.surface,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(Insets.smallRadius),
-        borderSide: BorderSide.none,
       ),
     );
   }
@@ -227,8 +233,12 @@ class _SosScreenState extends State<SosScreen> {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Emergency report submitted'),
-          backgroundColor: AppColors.successDark,
+          content: const Text('Emergency report submitted'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
       Navigator.pop(context);

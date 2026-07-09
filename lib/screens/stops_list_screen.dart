@@ -4,7 +4,6 @@ import '../providers/trip_provider.dart';
 import '../models/stop.dart';
 import '../widgets/stop_card.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 import '../theme/app_colors.dart';
 import '../core/app_card.dart';
 import '../core/app_status_badge.dart';
@@ -15,12 +14,11 @@ class StopsListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Stops', style: TextStyle(color: Colors.white)),
-        backgroundColor: AppColors.surface,
-        elevation: 0,
+        title: const Text('Stops'),
         actions: [
           Consumer<TripProvider>(
             builder: (context, trip, _) {
@@ -30,9 +28,9 @@ class StopsListScreen extends StatelessWidget {
                 child: Center(
                   child: Text(
                     '${trip.completedStops} / ${trip.totalStops} Done',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
+                    style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -45,16 +43,27 @@ class StopsListScreen extends StatelessWidget {
       body: Consumer<TripProvider>(
         builder: (context, trip, _) {
           if (trip.selectedPlan == null) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(Insets.xxl),
+                padding: const EdgeInsets.all(Insets.xxl),
                 child: AppCard(
                   child: Padding(
-                    padding: EdgeInsets.all(Insets.lg),
-                    child: Text(
-                      'Please select a dispatch plan from Home',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textTertiary),
+                    padding: const EdgeInsets.all(Insets.xl),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          size: 40,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Please select a dispatch plan from Home',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: cs.onSurfaceVariant),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -69,14 +78,10 @@ class StopsListScreen extends StatelessWidget {
           final hasStops = hasInvoiceStops || hasPurchaseStops || hasOtherStops;
 
           if (!hasStops) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(Insets.xxl),
-                child: Text(
-                  'No stops loaded for this plan',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textTertiary),
-                ),
+            return Center(
+              child: Text(
+                'No stops loaded for this plan',
+                style: TextStyle(color: cs.onSurfaceVariant),
               ),
             );
           }
@@ -87,8 +92,8 @@ class StopsListScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: Insets.sm),
               children: [
                 if (hasInvoiceStops) ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
                       horizontal: Insets.lg,
                       vertical: Insets.sm,
                     ),
@@ -99,8 +104,8 @@ class StopsListScreen extends StatelessWidget {
                   ),
                 ],
                 if (hasPurchaseStops) ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
                       horizontal: Insets.lg,
                       vertical: Insets.sm,
                     ),
@@ -121,8 +126,8 @@ class StopsListScreen extends StatelessWidget {
                   ),
                 ],
                 if (hasOtherStops) ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
                       horizontal: Insets.lg,
                       vertical: Insets.sm,
                     ),
@@ -159,7 +164,9 @@ class _CustomerGroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final hasCoords = group.latitude != null && group.longitude != null;
+
     return AppCard(
       margin: const EdgeInsets.symmetric(
         horizontal: Insets.md,
@@ -176,33 +183,47 @@ class _CustomerGroupCard extends StatelessWidget {
         leading: CircleAvatar(
           backgroundColor: group.allTerminal
               ? (group.allFulfilled
-                    ? AppColors.successDark
-                    : AppColors.errorDark)
-              : AppColors.primaryDark,
+                    ? AppColors.success.withValues(alpha: 0.2)
+                    : AppColors.error.withValues(alpha: 0.2))
+              : cs.primary.withValues(alpha: 0.15),
           radius: 18,
           child: Text(
             '${group.totalStops}',
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            style: TextStyle(
+              color: group.allTerminal
+                  ? (group.allFulfilled ? AppColors.success : AppColors.error)
+                  : cs.primary,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
         title: Text(
           group.customerName ?? group.customerCode,
-          style: AppTextStyle.subheading,
+          style: TextStyle(
+            color: cs.onSurface,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         subtitle: hasCoords
             ? Row(
-                children: const [
-                  Icon(Icons.location_on, size: 11, color: AppColors.success),
-                  SizedBox(width: 3),
+                children: [
+                  Icon(
+                    Icons.location_on_rounded,
+                    size: 11,
+                    color: AppColors.success,
+                  ),
+                  const SizedBox(width: 3),
                   Text(
                     'Location pinned',
                     style: TextStyle(color: AppColors.success, fontSize: 11),
                   ),
                 ],
               )
-            : const Text(
+            : Text(
                 'No coordinates',
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
               ),
         trailing: _AggregateIndicator(group: group),
         children: group.stops.map((stop) {
@@ -211,15 +232,12 @@ class _CustomerGroupCard extends StatelessWidget {
             contentPadding: const EdgeInsets.only(left: 56, right: Insets.lg),
             title: Text(
               stop.invoiceNo ?? 'INV-#${stop.id}',
-              style: AppTextStyle.body,
+              style: TextStyle(color: cs.onSurface, fontSize: 14),
             ),
             subtitle: stop.amount != null
                 ? Text(
                     '₱${stop.amount!.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      color: AppColors.textTertiary,
-                      fontSize: 11,
-                    ),
+                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
                   )
                 : null,
             trailing: Row(
@@ -228,10 +246,10 @@ class _CustomerGroupCard extends StatelessWidget {
               children: [
                 Flexible(child: AppStatusBadge(status: stop.status)),
                 const SizedBox(width: 10),
-                const Icon(
-                  Icons.arrow_forward_ios,
-                  size: 14,
-                  color: AppColors.textSecondary,
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: cs.onSurfaceVariant,
                 ),
               ],
             ),
@@ -259,10 +277,10 @@ class _AggregateIndicator extends StatelessWidget {
           vertical: Insets.xs,
         ),
         decoration: BoxDecoration(
-          color: AppColors.successDark,
+          color: AppColors.success.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(Insets.cardRadius),
         ),
-        child: const Icon(Icons.check, size: 14, color: AppColors.success),
+        child: Icon(Icons.check_rounded, size: 14, color: AppColors.success),
       );
     }
 
@@ -273,12 +291,12 @@ class _AggregateIndicator extends StatelessWidget {
           vertical: Insets.xs,
         ),
         decoration: BoxDecoration(
-          color: AppColors.errorDark,
+          color: AppColors.error.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(Insets.cardRadius),
         ),
         child: Text(
           '${group.notFulfilledCount}',
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.error,
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -294,12 +312,12 @@ class _AggregateIndicator extends StatelessWidget {
           vertical: Insets.xs,
         ),
         decoration: BoxDecoration(
-          color: AppColors.warningDark,
+          color: AppColors.warning.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(Insets.cardRadius),
         ),
         child: Text(
           '${group.totalStops - group.fulfilledCount}',
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.warning,
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -311,13 +329,13 @@ class _AggregateIndicator extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: Insets.xs),
       decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
+        color: Theme.of(context).colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(Insets.cardRadius),
       ),
       child: Text(
         '${group.totalStops}',
-        style: const TextStyle(
-          color: AppColors.textSecondary,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),

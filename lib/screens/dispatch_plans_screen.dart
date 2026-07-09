@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/trip.dart';
 import '../providers/trip_provider.dart';
 import '../providers/gps_provider.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 import '../core/app_card.dart';
 import '../core/app_action_button.dart';
 import '../core/app_status_badge.dart';
@@ -20,15 +20,10 @@ class DispatchPlansScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text(
-          'Dispatch Plans',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Colors.grey.shade900,
-      ),
+      backgroundColor: cs.surfaceContainerLowest,
+      appBar: AppBar(title: const Text('Dispatch Plans')),
       body: SafeArea(
         child: Column(children: [Expanded(child: _body(context))]),
       ),
@@ -52,7 +47,7 @@ class DispatchPlansScreen extends StatelessWidget {
               if (trip.selectedPlan != null)
                 ..._activeTripSection(context, trip)
               else
-                _noActiveTripCard(),
+                _noActiveTripCard(context),
               if (trip.pendingPlans.isNotEmpty) ...[
                 Insets.gapLg,
                 _pendingPlansSection(context, trip),
@@ -67,6 +62,7 @@ class DispatchPlansScreen extends StatelessWidget {
   List<Widget> _activeTripSection(BuildContext context, TripProvider trip) {
     final t = trip.selectedPlan!;
     final fmt = DateFormat('MMM dd, yyyy HH:mm');
+    final cs = Theme.of(context).colorScheme;
 
     final showDeparture =
         t.status == 'For Dispatch' &&
@@ -76,39 +72,34 @@ class DispatchPlansScreen extends StatelessWidget {
 
     return [
       if (trip.activeTrip != null && t.id != trip.activeTrip?.id)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: InkWell(
-            onTap: () => trip.selectPlan(trip.activeTrip!),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade900.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade800),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.arrow_back, color: Colors.blue.shade300, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Viewing historical/pending plan. Tap to view active trip.',
-                      style: TextStyle(
-                        color: Colors.blue.shade300,
-                        fontSize: 12,
-                      ),
-                    ),
+        GestureDetector(
+          onTap: () => trip.selectPlan(trip.activeTrip!),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: cs.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.arrow_back_rounded, color: cs.primary, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Viewing another plan. Tap to return to active trip.',
+                    style: TextStyle(color: cs.primary, fontSize: 12),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
       AppGradientHeader(
         title: t.docNo,
         trailing: t.status,
-        leadingIcon: Icons.directions_car,
+        leadingIcon: Icons.directions_car_rounded,
         leadingText: t.vehicle?.vehiclePlate ?? 'N/A',
       ),
       Insets.gapLg,
@@ -124,6 +115,7 @@ class DispatchPlansScreen extends StatelessWidget {
         AppActionButton.arrival(onPressed: () => _markArrived(context, t)),
       Insets.gapLg,
       AppCard.info(
+        context: context,
         title: 'Trip Details',
         children: [
           AppInfoRow(label: 'Doc No', value: t.docNo),
@@ -149,13 +141,16 @@ class DispatchPlansScreen extends StatelessWidget {
       ),
       Insets.gapMd,
       AppCard.info(
+        context: context,
         title: 'Crew',
         children: t.crew.isEmpty
             ? [
                 ListTile(
                   title: Text(
                     'No crew assigned',
-                    style: TextStyle(color: Colors.grey.shade500),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ]
@@ -163,14 +158,17 @@ class DispatchPlansScreen extends StatelessWidget {
                   .map(
                     (c) => ListTile(
                       dense: true,
-                      leading: Icon(Icons.person, color: Colors.grey.shade400),
+                      leading: Icon(
+                        Icons.person_rounded,
+                        color: cs.onSurfaceVariant,
+                      ),
                       title: Text(
                         c.name ?? 'Crew #${c.userId}',
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: cs.onSurface),
                       ),
                       subtitle: Text(
                         c.role,
-                        style: TextStyle(color: Colors.grey.shade500),
+                        style: TextStyle(color: cs.onSurfaceVariant),
                       ),
                     ),
                   )
@@ -181,7 +179,14 @@ class DispatchPlansScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Stop Progress', style: AppTextStyle.sectionHeader),
+            Text(
+              'Stop Progress',
+              style: TextStyle(
+                color: cs.primary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             Insets.gapMd,
             AppProgressInfo(
               completed: trip.completedStops,
@@ -193,19 +198,22 @@ class DispatchPlansScreen extends StatelessWidget {
     ];
   }
 
-  Widget _noActiveTripCard() {
-    return Card(
-      color: Colors.grey.shade900,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: const Padding(
-        padding: EdgeInsets.all(24),
+  Widget _noActiveTripCard(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
         child: Column(
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
-            SizedBox(height: 12),
+            Icon(
+              Icons.inbox_outlined,
+              size: 48,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 12),
             Text(
               'No active dispatch plan',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 15),
             ),
           ],
         ),
@@ -219,33 +227,44 @@ class DispatchPlansScreen extends StatelessWidget {
       children: [
         AppSectionHeader(title: 'Pending Dispatch Plans'),
         Insets.gapSm,
-        ...trip.pendingPlans.map((p) => _pendingPlanTile(p)),
+        ...trip.pendingPlans.map((p) => _pendingPlanTile(context, p)),
       ],
     );
   }
 
-  Widget _pendingPlanTile(PostDispatchPlan p) {
+  Widget _pendingPlanTile(BuildContext context, PostDispatchPlan p) {
+    final cs = Theme.of(context).colorScheme;
     return AppCard(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: Icon(Icons.route, color: Colors.blue.shade300, size: 28),
+        leading: Icon(Icons.route_rounded, color: cs.primary, size: 26),
         title: Text(
           p.docNo,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
           p.vehicle?.vehiclePlate ?? 'No vehicle assigned',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
         ),
         trailing: AppStatusBadge(status: p.status),
       ),
     );
   }
 
-  void _confirmDeparture(BuildContext context, PostDispatchPlan plan) {
+  void _confirmDeparture(BuildContext context, PostDispatchPlan plan) async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!context.mounted) return;
+    if (!enabled) {
+      AppDialog.showConfirm(
+        context,
+        title: 'GPS Required',
+        message: 'Please turn on your device GPS before starting the trip.',
+        confirmLabel: 'OK',
+        onConfirm: () {},
+      );
+      return;
+    }
+
     AppDialog.showConfirm(
       context,
       title: 'Confirm Departure',
@@ -255,6 +274,7 @@ class DispatchPlansScreen extends StatelessWidget {
         final trip = context.read<TripProvider>();
         final gps = context.read<GpsProvider>();
         trip.confirmDeparture(plan: plan, remarks: remarks).then((_) {
+          if (!context.mounted) return;
           if (trip.activeTrip != null) {
             gps.startTracking(trip.activeTrip!.id);
             Navigator.push(

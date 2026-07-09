@@ -185,6 +185,26 @@ class NotificationService {
     nav.popUntil((r) => r.isFirst);
   }
 
+  Future<void> showSyncFailureNotification({
+    required int failedCount,
+    String? detail,
+  }) async {
+    await showLocalNotification(
+      title: 'Sync Issue',
+      body:
+          '$failedCount items failed to sync${detail != null ? ': $detail' : ''}. Open Sync Log for details.',
+      id: 9000,
+    );
+  }
+
+  Future<void> showSyncCompleteNotification(int syncedCount) async {
+    await showLocalNotification(
+      title: 'Sync Complete',
+      body: '$syncedCount item(s) synced successfully.',
+      id: 9001,
+    );
+  }
+
   Future<void> _registerToken(String token) async {
     try {
       await _api.post(

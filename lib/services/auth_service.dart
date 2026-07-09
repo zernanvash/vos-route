@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import '../models/driver_profile.dart';
@@ -93,6 +94,34 @@ class AuthService {
 
   Future<bool> isLoggedIn() async {
     final token = await _api.getToken();
-    return token != null && token.isNotEmpty;
+    return token != null && token.isNotEmpty && (await _isTokenValid(token));
+  }
+
+  Future<bool> _isTokenValid(String token) async {
+    try {
+      final isExpired = JwtDecoder.isExpired(token);
+      if (!isExpired) return true;
+
+      if (await _api.pingDirectus()) {
+        try {
+          await _api.get('/auth/me');
+          return true;
+        } catch (_) {
+          await _api.clearToken();
+          return false;
+        }
+      }
+
+      await _api.clearToken();
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> validateCurrentToken() async {
+    final token = await _api.getToken();
+    if (token == null || token.isEmpty) return false;
+    return _isTokenValid(token);
   }
 }

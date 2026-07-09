@@ -9,7 +9,6 @@ class PhotoQuestItem {
   bool photoCaptured;
   String? localPhotoPath;
   String? directusFileUuid;
-  bool signatureCaptured;
   String? stopStatus;
 
   PhotoQuestItem({
@@ -22,22 +21,18 @@ class PhotoQuestItem {
     this.photoCaptured = false,
     this.localPhotoPath,
     this.directusFileUuid,
-    this.signatureCaptured = false,
     this.stopStatus,
   });
 
   bool get isComplete =>
       photoCaptured &&
-      signatureCaptured &&
       stopStatus != null &&
       stopStatus != 'Pending' &&
       stopStatus != 'En Route';
 
   bool get needsPhoto => !photoCaptured;
-  bool get needsSignature => photoCaptured && !signatureCaptured;
   bool get needsStatus =>
       photoCaptured &&
-      signatureCaptured &&
       (stopStatus == null ||
           stopStatus == 'Pending' ||
           stopStatus == 'En Route');
@@ -52,7 +47,6 @@ class PhotoQuest {
   int get totalCount => items.length;
   int get completedCount => items.where((i) => i.isComplete).length;
   int get photosCaptured => items.where((i) => i.photoCaptured).length;
-  int get signaturesCaptured => items.where((i) => i.signatureCaptured).length;
 
   bool get allComplete => items.every((i) => i.isComplete);
 

@@ -3,6 +3,8 @@ import 'package:geolocator/geolocator.dart';
 import '../config/app_config.dart';
 import '../models/action_entry.dart';
 import 'action_queue_service.dart';
+import 'background_service.dart';
+import 'timezone_service.dart';
 
 class GpsService {
   final ActionQueueService _queue = ActionQueueService();
@@ -21,6 +23,7 @@ class GpsService {
   void startTracking(int tripId) {
     _activeTripId = tripId;
     _isTracking = true;
+    BackgroundService().startTracking(tripId);
 
     _captureTimer = Timer.periodic(
       Duration(seconds: AppConfig.gpsIntervalSeconds),
@@ -39,6 +42,7 @@ class GpsService {
     _flushBuffer();
     _isTracking = false;
     _activeTripId = null;
+    BackgroundService().stopTracking();
   }
 
   Future<void> _captureAndBuffer() async {
@@ -57,7 +61,7 @@ class GpsService {
         'accuracy': position.accuracy,
         'speed': position.speed,
         'heading': position.heading,
-        'recorded_at': DateTime.now().toIso8601String(),
+        'recorded_at': TimezoneService.formatIso8601(DateTime.now()),
       });
 
       if (_buffer.length >= _batchSize) {

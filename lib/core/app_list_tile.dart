@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 
 class AppListTile extends StatelessWidget {
@@ -24,6 +23,8 @@ class AppListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = trailing;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: Insets.xs),
       child: InkWell(
@@ -32,7 +33,7 @@ class AppListTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 18, color: AppColors.textSecondary),
+              Icon(icon, size: 18, color: cs.onSurfaceVariant),
               Insets.gapWSm,
             ],
             SizedBox(
@@ -41,7 +42,7 @@ class AppListTile extends StatelessWidget {
                 label,
                 style:
                     labelStyle ??
-                    const TextStyle(color: AppColors.textTertiary),
+                    TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
               ),
             ),
             if (value != null)
@@ -50,10 +51,14 @@ class AppListTile extends StatelessWidget {
                   value!,
                   style:
                       valueStyle ??
-                      const TextStyle(color: AppColors.textPrimary),
+                      TextStyle(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                      ),
                 ),
               ),
-            if (trailing != null) trailing!,
+            if (t != null) t,
           ],
         ),
       ),

@@ -8,4 +8,5 @@ class AppRoutes {
   static const String sos = '/sos';
   static const String settings = '/settings';
   static const String quest = '/quest';
+  static const String syncLog = '/sync-log';
 }

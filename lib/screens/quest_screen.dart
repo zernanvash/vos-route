@@ -1,21 +1,20 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../models/photo_quest.dart';
 import '../models/action_entry.dart';
 import '../providers/trip_provider.dart';
-import '../services/upload_service.dart';
 import '../services/action_queue_service.dart';
-import '../widgets/signature_pad.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../theme/app_colors.dart';
 import '../core/app_card.dart';
 import '../core/app_action_button.dart';
 
-enum _QuestMode { list, capturing, preview, signing, status, complete }
+enum _QuestMode { list, capturing, preview, status, complete }
 
 class QuestScreen extends StatefulWidget {
   const QuestScreen({super.key});
@@ -26,13 +25,10 @@ class QuestScreen extends StatefulWidget {
 
 class _QuestScreenState extends State<QuestScreen> {
   _QuestMode _mode = _QuestMode.list;
-  final UploadService _uploadService = UploadService();
   final ActionQueueService _queue = ActionQueueService();
   final ImagePicker _picker = ImagePicker();
 
   XFile? _capturedImage;
-  Uint8List? _signatureBytes;
-  String? _uploadingLabel;
   bool _isUploading = false;
 
   PhotoQuest? get _quest => context.read<TripProvider>().currentQuest;
@@ -60,8 +56,6 @@ class _QuestScreenState extends State<QuestScreen> {
               return _buildQuestList(quest);
             case _QuestMode.preview:
               return _buildPreview();
-            case _QuestMode.signing:
-              return _buildSignatureSection();
             case _QuestMode.status:
               return _buildStatusSection();
             case _QuestMode.complete:
@@ -116,7 +110,7 @@ class _QuestScreenState extends State<QuestScreen> {
                       Text(quest.progressLabel, style: AppTextStyle.subheading),
                       Insets.gapXs,
                       Text(
-                        '${quest.photosCaptured} photos, ${quest.signaturesCaptured} signatures',
+                        '${quest.photosCaptured} photos captured',
                         style: AppTextStyle.caption,
                       ),
                     ],
@@ -154,14 +148,10 @@ class _QuestScreenState extends State<QuestScreen> {
       statusColor = AppColors.success;
       statusIcon = Icons.check_circle;
       statusLabel = 'Complete';
-    } else if (item.photoCaptured && item.signatureCaptured) {
+    } else if (item.photoCaptured) {
       statusColor = Colors.orange;
       statusIcon = Icons.edit;
       statusLabel = 'Needs status';
-    } else if (item.photoCaptured) {
-      statusColor = Colors.amber;
-      statusIcon = Icons.edit;
-      statusLabel = 'Needs signature';
     } else {
       statusColor = AppColors.textTertiary;
       statusIcon = Icons.pending;
@@ -203,8 +193,6 @@ class _QuestScreenState extends State<QuestScreen> {
                 Row(
                   children: [
                     _questChip('📷', item.photoCaptured),
-                    Insets.gapWSm,
-                    _questChip('✍️', item.signatureCaptured),
                     Insets.gapWSm,
                     _questChip(
                       '✅',
@@ -335,7 +323,7 @@ class _QuestScreenState extends State<QuestScreen> {
                             ),
                           )
                         : const Icon(Icons.check),
-                    label: Text(_isUploading ? 'Uploading...' : 'Accept'),
+                    label: const Text('Accept'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.successDark,
                       foregroundColor: Colors.white,
@@ -346,93 +334,7 @@ class _QuestScreenState extends State<QuestScreen> {
             ],
           ),
         ),
-        if (_uploadingLabel != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Insets.lg),
-            child: Text(_uploadingLabel!, style: AppTextStyle.caption),
-          ),
       ],
-    );
-  }
-
-  Widget _buildSignatureSection() {
-    if (_currentItem == null) {
-      return Center(
-        child: Text('No item', style: TextStyle(color: AppColors.textTertiary)),
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: Insets.cardLg,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Signature for ${_currentItem!.invoiceNo}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Insets.gapXs,
-          Text(_currentItem!.customerName, style: AppTextStyle.caption),
-          Insets.gapLg,
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Customer Signature',
-                      style: TextStyle(
-                        color: _signatureBytes != null
-                            ? AppColors.success
-                            : AppColors.info,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Insets.gapWSm,
-                    Text(
-                      '(Required)',
-                      style: TextStyle(
-                        color: _signatureBytes != null
-                            ? AppColors.success
-                            : AppColors.error,
-                        fontSize: 12,
-                      ),
-                    ),
-                    if (_signatureBytes != null) ...[
-                      Insets.gapWSm,
-                      Icon(
-                        Icons.check_circle,
-                        size: 16,
-                        color: AppColors.success,
-                      ),
-                    ],
-                  ],
-                ),
-                Insets.gapMd,
-                SignaturePad(
-                  onSign: (data) {
-                    if (data != null) {
-                      setState(() => _signatureBytes = data);
-                    }
-                  },
-                ),
-                Insets.gapLg,
-                AppActionButton(
-                  onPressed: _signatureBytes == null ? null : _acceptSignature,
-                  label: 'Confirm Signature',
-                  icon: Icons.check,
-                  backgroundColor: AppColors.primaryDark,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -529,7 +431,6 @@ class _QuestScreenState extends State<QuestScreen> {
     }
 
     _currentItem = next;
-    _signatureBytes = null;
     _capturedImage = null;
     setState(() => _mode = _QuestMode.capturing);
     _capturePhoto();
@@ -563,96 +464,54 @@ class _QuestScreenState extends State<QuestScreen> {
     _capturePhoto();
   }
 
+  Future<String> _saveToPersistentDirectory(String tempPath) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photosDir = Directory(p.join(appDir.path, 'photos'));
+    if (!await photosDir.exists()) {
+      await photosDir.create(recursive: true);
+    }
+    final fileName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final newPath = p.join(photosDir.path, fileName);
+    await File(tempPath).copy(newPath);
+    return newPath;
+  }
+
   Future<void> _acceptPhoto() async {
     if (_capturedImage == null || _currentItem == null) return;
 
-    setState(() {
-      _isUploading = true;
-      _uploadingLabel = 'Uploading photo...';
-    });
+    setState(() => _isUploading = true);
 
     try {
-      final uuid = await _uploadService.uploadFile(_capturedImage!.path);
-      if (uuid != null && mounted) {
-        await _queue.enqueue(
-          ActionEntry(
-            actionType: ActionType.linkPodPhoto,
-            payload: {
-              'post_dispatch_invoice_id': _currentItem!.invoiceStopId,
-              'file': uuid,
-              'doc_no': _currentItem!.invoiceNo,
-            },
-            endpoint: '/items/post_dispatch_nte',
-            httpMethod: 'POST',
-            priority: ActionPriority.normal,
-          ),
-        );
+      final persistentPath =
+          await _saveToPersistentDirectory(_capturedImage!.path);
 
-        if (mounted) {
-          context.read<TripProvider>().markQuestPhotoCaptured(
-            _currentItem!.invoiceStopId,
-            _capturedImage!.path,
-            uuid,
-          );
-          setState(() {
-            _isUploading = false;
-            _uploadingLabel = null;
-            _mode = _QuestMode.signing;
-          });
-        }
+      await _queue.enqueue(
+        ActionEntry(
+          actionType: ActionType.linkPodPhoto,
+          payload: {
+            'post_dispatch_invoice_id': _currentItem!.invoiceStopId,
+            'local_file_path': persistentPath,
+            'doc_no': _currentItem!.invoiceNo,
+          },
+          endpoint: '/items/post_dispatch_nte',
+          httpMethod: 'POST',
+          priority: ActionPriority.normal,
+        ),
+      );
+
+      if (mounted) {
+        context.read<TripProvider>().markQuestPhotoCaptured(
+          _currentItem!.invoiceStopId,
+          persistentPath,
+        );
+        setState(() {
+          _isUploading = false;
+          _mode = _QuestMode.status;
+        });
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _isUploading = false;
-          _uploadingLabel = 'Upload failed. Tap Accept to retry.';
-        });
-      }
-    }
-  }
-
-  Future<void> _acceptSignature() async {
-    if (_currentItem == null || _signatureBytes == null) return;
-
-    setState(() {
-      _isUploading = true;
-      _uploadingLabel = 'Uploading signature...';
-    });
-
-    try {
-      final sigUuid = await _uploadService.uploadBytes(_signatureBytes!);
-      if (sigUuid != null && mounted) {
-        await _queue.enqueue(
-          ActionEntry(
-            actionType: ActionType.linkPodPhoto,
-            payload: {
-              'post_dispatch_invoice_id': _currentItem!.invoiceStopId,
-              'file': sigUuid,
-              'doc_no': 'SIG-${_currentItem!.invoiceNo}',
-            },
-            endpoint: '/items/post_dispatch_nte',
-            httpMethod: 'POST',
-            priority: ActionPriority.normal,
-          ),
-        );
-
-        if (mounted) {
-          context.read<TripProvider>().markQuestSignatureCaptured(
-            _currentItem!.invoiceStopId,
-          );
-          setState(() {
-            _isUploading = false;
-            _uploadingLabel = null;
-            _mode = _QuestMode.status;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-          _uploadingLabel = 'Upload failed. Tap Confirm to retry.';
-        });
+        setState(() => _isUploading = false);
       }
     }
   }

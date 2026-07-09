@@ -6,7 +6,6 @@ import '../core/app_status_badge.dart';
 import '../core/app_section_header.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 
 class BudgetScreen extends StatefulWidget {
   const BudgetScreen({super.key});
@@ -26,15 +25,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Dispatch Budgets',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        backgroundColor: AppColors.surface,
-        iconTheme: IconThemeData(color: Colors.white),
-      ),
+      appBar: AppBar(title: const Text('Dispatch Budgets')),
       body: Consumer<TripProvider>(
         builder: (context, trip, _) {
           final plans = trip.allPlans;
@@ -46,7 +39,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
             return Center(
               child: Text(
                 'No dispatch plans loaded',
-                style: AppTextStyle.caption,
+                style: TextStyle(color: cs.onSurfaceVariant),
               ),
             );
           }
@@ -69,21 +62,20 @@ class _BudgetScreenState extends State<BudgetScreen> {
 
                 return AppCard(
                   margin: const EdgeInsets.only(bottom: 16),
-                  borderColor: plan.isActive
-                      ? AppColors.primary
-                      : AppColors.border,
+                  borderColor: plan.isActive ? cs.primary : null,
                   borderWidth: plan.isActive ? 1.5 : 1.0,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ── Plan header ────────────────────────────────
                       Container(
                         padding: Insets.cardLg,
                         decoration: BoxDecoration(
                           color: plan.isActive
-                              ? AppColors.primaryDark.withValues(alpha: 0.3)
-                              : Colors.black26,
+                              ? cs.primary.withValues(alpha: 0.08)
+                              : cs.surfaceContainer,
                           borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(Insets.cardRadius),
+                            top: Radius.circular(Insets.cardRadius - 1),
                           ),
                         ),
                         child: Column(
@@ -94,7 +86,9 @@ class _BudgetScreenState extends State<BudgetScreen> {
                                 Expanded(
                                   child: Text(
                                     plan.docNo,
-                                    style: AppTextStyle.subheading.copyWith(
+                                    style: TextStyle(
+                                      color: cs.onSurface,
+                                      fontSize: 15,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -102,34 +96,40 @@ class _BudgetScreenState extends State<BudgetScreen> {
                                 AppStatusBadge(status: plan.status),
                               ],
                             ),
-                            Insets.gapSm,
+                            const SizedBox(height: 6),
                             Row(
                               children: [
                                 Icon(
-                                  Icons.directions_car,
-                                  color: AppColors.textSecondary,
-                                  size: 16,
+                                  Icons.directions_car_rounded,
+                                  color: cs.onSurfaceVariant,
+                                  size: 15,
                                 ),
-                                Insets.gapWSm,
+                                const SizedBox(width: 6),
                                 Text(
                                   plan.vehicle?.vehiclePlate ?? 'N/A',
-                                  style: AppTextStyle.body.copyWith(
-                                    color: AppColors.textSecondary,
+                                  style: TextStyle(
+                                    color: cs.onSurfaceVariant,
                                     fontSize: 13,
                                   ),
                                 ),
                                 const Spacer(),
                                 if (plan.isActive)
                                   Container(
-                                    padding: Insets.badgeSm,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary,
-                                      borderRadius: BorderRadius.circular(4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
                                     ),
-                                    child: Text(
+                                    decoration: BoxDecoration(
+                                      color: cs.primary,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text(
                                       'ACTIVE',
-                                      style: AppTextStyle.badge.copyWith(
+                                      style: TextStyle(
                                         color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.5,
                                       ),
                                     ),
                                   ),
@@ -139,13 +139,15 @@ class _BudgetScreenState extends State<BudgetScreen> {
                         ),
                       ),
 
+                      // ── Budget lines ───────────────────────────────
                       if (budget.isEmpty)
                         Padding(
                           padding: Insets.cardLg,
                           child: Text(
                             'No budget lines for this dispatch',
-                            style: AppTextStyle.caption.copyWith(
-                              color: AppColors.textTertiary,
+                            style: TextStyle(
+                              color: cs.onSurfaceVariant,
+                              fontSize: 13,
                             ),
                           ),
                         )
@@ -162,24 +164,36 @@ class _BudgetScreenState extends State<BudgetScreen> {
                               dense: true,
                               title: Text(
                                 item.coaName ?? 'Expense Line',
-                                style: AppTextStyle.amount,
+                                style: TextStyle(
+                                  color: cs.onSurface,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                               subtitle: item.remarks != null
                                   ? Text(
                                       item.remarks!,
-                                      style: AppTextStyle.caption.copyWith(
-                                        color: AppColors.textTertiary,
+                                      style: TextStyle(
+                                        color: cs.onSurfaceVariant,
+                                        fontSize: 11,
                                       ),
                                     )
                                   : null,
                               trailing: Text(
                                 '₱${item.amount.toStringAsFixed(2)}',
-                                style: AppTextStyle.amount,
+                                style: TextStyle(
+                                  color: cs.onSurface,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
                               ),
                             );
                           },
                         ),
-                        const AppDivider(),
+                        AppDivider(),
                         Padding(
                           padding: Insets.cardLg,
                           child: Row(
@@ -187,14 +201,15 @@ class _BudgetScreenState extends State<BudgetScreen> {
                             children: [
                               Text(
                                 'Subtotal',
-                                style: AppTextStyle.amount.copyWith(
-                                  color: AppColors.textSecondary,
+                                style: TextStyle(
+                                  color: cs.onSurfaceVariant,
                                   fontWeight: FontWeight.w600,
+                                  fontSize: 13,
                                 ),
                               ),
                               Text(
                                 '₱${total.toStringAsFixed(2)}',
-                                style: AppTextStyle.amount.copyWith(
+                                style: TextStyle(
                                   color: AppColors.success,
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,

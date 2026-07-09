@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/action_queue_service.dart';
 import '../services/notification_service.dart';
+import '../services/timezone_service.dart';
 
 class TripProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
@@ -373,6 +374,38 @@ class TripProvider extends ChangeNotifier {
         counts[s.status] = counts[s.status]! + 1;
       } else {
         counts['Pending'] = counts['Pending']! + 1;
+      }
+    }
+    return counts;
+  }
+
+  Map<String, int> get aggregatedInvoiceStatusCounts {
+    final counts = <String, int>{
+      'Fulfilled': 0,
+      'Not Fulfilled': 0,
+      'Fulfilled with Returns': 0,
+      'Fulfilled with Concerns': 0,
+      'Pending': 0,
+    };
+    for (final s in invoiceStops) {
+      if (counts.containsKey(s.status)) {
+        counts[s.status] = counts[s.status]! + 1;
+      } else {
+        counts['Pending'] = counts['Pending']! + 1;
+      }
+    }
+    for (final plan in allPlans) {
+      if (plan.id == _activeTrip?.id) continue;
+      final cached = _tripCache[plan.id];
+      if (cached == null) continue;
+      final stops = cached['invoice_stops'] as List<dynamic>? ?? [];
+      for (final s in stops) {
+        final status = s['status'] as String? ?? 'Pending';
+        if (counts.containsKey(status)) {
+          counts[status] = counts[status]! + 1;
+        } else {
+          counts['Pending'] = counts['Pending']! + 1;
+        }
       }
     }
     return counts;
@@ -798,7 +831,7 @@ class TripProvider extends ChangeNotifier {
     if (targetPlan == null) return;
     _error = null;
 
-    final nowStr = DateTime.now().toIso8601String();
+    final nowStr = TimezoneService().formatNow();
     final parsedNow = DateTime.parse(nowStr);
 
     // 1. Optimistic local state update (in-memory only)
@@ -985,7 +1018,7 @@ class TripProvider extends ChangeNotifier {
       return;
     }
 
-    final nowStr = DateTime.now().toIso8601String();
+    final nowStr = TimezoneService().formatNow();
     final parsedNow = DateTime.parse(nowStr);
 
     // 1. Optimistic local state update
@@ -1051,25 +1084,12 @@ class TripProvider extends ChangeNotifier {
   void markQuestPhotoCaptured(
     int invoiceStopId,
     String localPath,
-    String uuid,
   ) {
     if (_currentQuest == null) return;
     for (final item in _currentQuest!.items) {
       if (item.invoiceStopId == invoiceStopId) {
         item.photoCaptured = true;
         item.localPhotoPath = localPath;
-        item.directusFileUuid = uuid;
-        notifyListeners();
-        return;
-      }
-    }
-  }
-
-  void markQuestSignatureCaptured(int invoiceStopId) {
-    if (_currentQuest == null) return;
-    for (final item in _currentQuest!.items) {
-      if (item.invoiceStopId == invoiceStopId) {
-        item.signatureCaptured = true;
         notifyListeners();
         return;
       }
@@ -1092,6 +1112,15 @@ class TripProvider extends ChangeNotifier {
     String status, {
     String? remarks,
   }) async {
+    const allowedStatuses = {
+      'Fulfilled',
+      'Not Fulfilled',
+      'Fulfilled with Returns',
+      'Fulfilled with Concerns',
+    };
+    if (!allowedStatuses.contains(status)) {
+      throw ArgumentError('Invalid stop status mapping: $status');
+    }
     _error = null;
 
     // 1. Optimistic local state update
@@ -1145,12 +1174,18 @@ class TripProvider extends ChangeNotifier {
     }
 
     // 2. Enqueue action
+    final profile = await _auth.getProfile();
+    final driverUserId = profile?.userId;
+    if (driverUserId == null) {
+      throw ArgumentError('Driver user ID is null. Please log in again.');
+    }
+
     await _queue.enqueue(
       ActionEntry(
         actionType: ActionType.updateStopStatus,
         payload: {
           'status': status,
-          'invoiceAt': DateTime.now().toIso8601String(),
+          'invoiceAt': driverUserId,
           'remarks': remarks,
         },
         endpoint: '/items/post_dispatch_invoices/$invoiceId',
@@ -1165,6 +1200,14 @@ class TripProvider extends ChangeNotifier {
     String status, {
     String? remarks,
   }) async {
+    const allowedStatuses = {
+      'Fulfilled',
+      'Not Fulfilled',
+      'Pending',
+    };
+    if (!allowedStatuses.contains(status)) {
+      throw ArgumentError('Invalid stop status mapping: $status');
+    }
     _error = null;
 
     // 1. Optimistic local state update

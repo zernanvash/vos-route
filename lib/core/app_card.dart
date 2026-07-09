@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 
 class AppInfoRow extends StatelessWidget {
   final String label;
@@ -17,20 +15,22 @@ class AppInfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
-            style: AppTextStyle.body.copyWith(color: AppColors.textSecondary),
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
           ),
           Text(
             value,
-            style: AppTextStyle.body.copyWith(
-              color: valueColor ?? AppColors.textPrimary,
+            style: TextStyle(
+              color: valueColor ?? cs.onSurface,
               fontWeight: FontWeight.w600,
+              fontSize: 13,
             ),
           ),
         ],
@@ -67,8 +67,12 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final effectiveBorderRadius =
         borderRadius ?? BorderRadius.circular(Insets.cardRadius);
+    final effectiveColor = color ?? cs.surface;
+    final effectiveBorderColor =
+        borderColor ?? cs.outlineVariant.withValues(alpha: 0.6);
 
     Widget card;
     if (gradient != null || borderColor != null) {
@@ -77,47 +81,66 @@ class AppCard extends StatelessWidget {
         margin: margin ?? EdgeInsets.zero,
         padding: padding ?? Insets.cardLg,
         decoration: BoxDecoration(
-          color: gradient != null ? null : (color ?? AppColors.surface),
+          color: gradient != null ? null : effectiveColor,
           gradient: gradient != null ? LinearGradient(colors: gradient!) : null,
           borderRadius: effectiveBorderRadius,
-          border: borderColor != null
-              ? Border.all(color: borderColor!, width: borderWidth)
-              : null,
+          border: Border.all(
+            color: gradient != null ? Colors.transparent : effectiveBorderColor,
+            width: borderWidth > 0 ? borderWidth : 1,
+          ),
         ),
         child: child,
       );
     } else {
-      card = Card(
-        color: color ?? AppColors.surface,
+      card = Container(
+        height: height,
         margin: margin ?? EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: effectiveBorderRadius),
-        child: Padding(padding: padding ?? Insets.cardLg, child: child),
+        padding: padding ?? Insets.cardLg,
+        decoration: BoxDecoration(
+          color: effectiveColor,
+          borderRadius: effectiveBorderRadius,
+          border: Border.all(color: effectiveBorderColor),
+        ),
+        child: child,
       );
     }
 
     if (onTap != null) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: effectiveBorderRadius,
-        child: card,
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: effectiveBorderRadius,
+          child: card,
+        ),
       );
     }
 
     return card;
   }
 
-  static AppCard info({
+  static Widget info({
+    required BuildContext context,
     required String title,
     required List<Widget> children,
     EdgeInsetsGeometry? padding,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return AppCard(
       padding: padding ?? Insets.cardLg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: AppTextStyle.sectionHeader),
-          Insets.gapSm,
+          Text(
+            title,
+            style: TextStyle(
+              color: cs.primary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 10),
           ...children,
         ],
       ),

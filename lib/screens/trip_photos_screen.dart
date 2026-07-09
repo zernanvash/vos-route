@@ -2,8 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../providers/trip_provider.dart';
-import '../services/upload_service.dart';
 import '../services/action_queue_service.dart';
 import '../models/action_entry.dart';
 
@@ -17,26 +18,21 @@ class TripPhotosScreen extends StatefulWidget {
 class _TripPhotosScreenState extends State<TripPhotosScreen> {
   final List<String> _outboundPhotos = [];
   final List<String> _inboundPhotos = [];
-  final UploadService _uploadService = UploadService();
   final ActionQueueService _queue = ActionQueueService();
   bool _isUploading = false;
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final trip = context.watch<TripProvider>().activeTrip;
     final isOutbound = trip?.timeOfDispatch == null;
     final title = isOutbound ? 'Outbound Photos' : 'Inbound Photos';
     final photos = isOutbound ? _outboundPhotos : _inboundPhotos;
 
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: Text(title, style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.grey.shade900,
-        iconTheme: IconThemeData(color: Colors.white),
-      ),
+      appBar: AppBar(title: Text(title)),
       body: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -44,9 +40,9 @@ class _TripPhotosScreenState extends State<TripPhotosScreen> {
               isOutbound
                   ? 'Capture cargo condition before departure'
                   : 'Capture cargo condition upon return',
-              style: TextStyle(color: Colors.grey.shade400),
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Expanded(
               child: photos.isEmpty
                   ? Center(
@@ -54,56 +50,68 @@ class _TripPhotosScreenState extends State<TripPhotosScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            Icons.photo_camera,
-                            size: 64,
-                            color: Colors.grey.shade600,
+                            Icons.photo_camera_outlined,
+                            size: 56,
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.4),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           Text(
                             'No photos captured',
-                            style: TextStyle(color: Colors.grey.shade500),
+                            style: TextStyle(color: cs.onSurfaceVariant),
                           ),
                         ],
                       ),
                     )
                   : GridView.builder(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                          ),
                       itemCount: photos.length,
                       itemBuilder: (_, i) => ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(10),
                         child: Image.file(File(photos[i]), fit: BoxFit.cover),
                       ),
                     ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               height: 52,
               child: ElevatedButton.icon(
                 onPressed: _isUploading ? null : _capturePhoto,
-                icon: Icon(Icons.camera_alt),
-                label: Text('Capture Photo'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade700,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                icon: const Icon(Icons.camera_alt_rounded),
+                label: const Text(
+                  'Capture Photo',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
             if (_isUploading) ...[
-              SizedBox(height: 12),
-              LinearProgressIndicator(backgroundColor: Colors.grey.shade800),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                borderRadius: BorderRadius.circular(4),
+                color: cs.primary,
+              ),
             ],
           ],
         ),
       ),
     );
+  }
+
+  Future<String> _saveToPersistentDirectory(String tempPath) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photosDir = Directory(p.join(appDir.path, 'photos'));
+    if (!await photosDir.exists()) {
+      await photosDir.create(recursive: true);
+    }
+    final fileName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final newPath = p.join(photosDir.path, fileName);
+    await File(tempPath).copy(newPath);
+    return newPath;
   }
 
   Future<void> _capturePhoto() async {
@@ -129,22 +137,31 @@ class _TripPhotosScreenState extends State<TripPhotosScreen> {
     });
 
     try {
-      final uuid = await _uploadService.uploadFile(file.path);
-      if (uuid != null) {
-        await _queue.enqueue(
-          ActionEntry(
-            actionType: ActionType.linkTripPhoto,
-            payload: {
-              'post_dispatch_plan_id': trip.id,
-              'file': uuid,
-              'type': isOutbound ? 'outbound' : 'inbound',
-            },
-            endpoint: '/items/post_dispatch_trip_photos',
-            httpMethod: 'POST',
-            priority: ActionPriority.normal,
-          ),
-        );
+      final persistentPath = await _saveToPersistentDirectory(file.path);
+
+      final idx = isOutbound
+          ? _outboundPhotos.length - 1
+          : _inboundPhotos.length - 1;
+      if (isOutbound) {
+        _outboundPhotos[idx] = persistentPath;
+      } else {
+        _inboundPhotos[idx] = persistentPath;
       }
+      if (mounted) setState(() {});
+
+      await _queue.enqueue(
+        ActionEntry(
+          actionType: ActionType.linkTripPhoto,
+          payload: {
+            'post_dispatch_plan_id': trip.id,
+            'local_file_path': persistentPath,
+            'type': isOutbound ? 'outbound' : 'inbound',
+          },
+          endpoint: '/items/post_dispatch_trip_photos',
+          httpMethod: 'POST',
+          priority: ActionPriority.normal,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }

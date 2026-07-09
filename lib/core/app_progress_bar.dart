@@ -11,18 +11,19 @@ class AppProgressBar extends StatelessWidget {
   const AppProgressBar({
     super.key,
     required this.value,
-    this.height = 10,
+    this.height = 8,
     this.backgroundColor,
     this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return ClipRRect(
       borderRadius: BorderRadius.circular(Insets.smallRadius),
       child: LinearProgressIndicator(
         value: value.clamp(0.0, 1.0),
-        backgroundColor: backgroundColor ?? AppColors.surfaceVariant,
+        backgroundColor: backgroundColor ?? cs.surfaceContainerHighest,
         valueColor: AlwaysStoppedAnimation(color ?? AppColors.success),
         minHeight: height,
       ),
@@ -41,20 +42,21 @@ class AppProgressInfo extends StatelessWidget {
     required this.completed,
     required this.total,
     this.value,
-    this.barHeight = 10,
+    this.barHeight = 8,
   });
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final progress = value ?? (total > 0 ? completed / total : 0.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppProgressBar(value: progress, height: barHeight),
-        Insets.gapSm,
+        const SizedBox(height: 8),
         Text(
           '$completed / $total stops completed',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
         ),
       ],
     );

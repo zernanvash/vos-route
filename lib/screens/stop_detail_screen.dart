@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../models/stop.dart';
 import '../providers/trip_provider.dart';
-import '../widgets/signature_pad.dart';
-import '../services/upload_service.dart';
 import '../services/map_launch_service.dart';
 import '../services/action_queue_service.dart';
 import '../models/action_entry.dart';
@@ -29,9 +29,6 @@ class StopDetailScreen extends StatefulWidget {
 
 class _StopDetailScreenState extends State<StopDetailScreen> {
   String? _localPhotoPath;
-  Uint8List? _signatureBytes;
-  bool _signatureConfirmed = false;
-  final UploadService _uploadService = UploadService();
   final ActionQueueService _queue = ActionQueueService();
   bool _isUploading = false;
   MapLibreMapController? _mapController;
@@ -152,8 +149,6 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
             if (_invoiceStop != null) ...[
               Insets.gapXxl,
               _photoSection(),
-              Insets.gapLg,
-              _signatureSection(),
               Insets.gapXxl,
               _statusSection(),
             ],
@@ -407,58 +402,6 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     );
   }
 
-  Widget _signatureSection() {
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Customer Signature',
-                style: TextStyle(
-                  color: _signatureConfirmed
-                      ? AppColors.success
-                      : AppColors.info,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Insets.gapWSm,
-              Text(
-                '(Required)',
-                style: TextStyle(
-                  color: _signatureConfirmed
-                      ? AppColors.success
-                      : AppColors.error,
-                  fontSize: 12,
-                ),
-              ),
-              if (_signatureConfirmed) ...[
-                Insets.gapWSm,
-                const Icon(
-                  Icons.check_circle,
-                  size: 16,
-                  color: AppColors.success,
-                ),
-              ],
-            ],
-          ),
-          Insets.gapMd,
-          SignaturePad(
-            onSign: (data) {
-              if (data != null) {
-                setState(() {
-                  _signatureBytes = data;
-                  _signatureConfirmed = true;
-                });
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _statusSection() {
     final statuses = [
       'Fulfilled',
@@ -488,20 +431,6 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
             ),
           ),
         ),
-        if (!_signatureConfirmed)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(
-              children: const [
-                Icon(Icons.info_outline, size: 14, color: AppColors.error),
-                SizedBox(width: 8),
-                Text(
-                  'Customer signature required before submitting',
-                  style: TextStyle(color: AppColors.error, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
         if (_isUploading)
           const Center(
             child: Padding(
@@ -570,6 +499,18 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
     );
   }
 
+  Future<String> _saveToPersistentDirectory(String tempPath) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photosDir = Directory(p.join(appDir.path, 'photos'));
+    if (!await photosDir.exists()) {
+      await photosDir.create(recursive: true);
+    }
+    final fileName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final newPath = p.join(photosDir.path, fileName);
+    await File(tempPath).copy(newPath);
+    return newPath;
+  }
+
   Future<void> _capturePhoto() async {
     final picker = ImagePicker();
     final file = await picker.pickImage(
@@ -577,60 +518,32 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
       imageQuality: 85,
     );
     if (file != null) {
-      setState(() => _localPhotoPath = file.path);
+      final persistentPath = await _saveToPersistentDirectory(file.path);
+      setState(() => _localPhotoPath = persistentPath);
     }
   }
 
   Future<void> _updateStatus(String status) async {
     if (_invoiceStop == null) return;
-    if (!_signatureConfirmed || _signatureBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please capture customer signature first'),
-          backgroundColor: AppColors.errorDark,
-        ),
-      );
-      return;
-    }
 
     final tripProvider = context.read<TripProvider>();
     setState(() => _isUploading = true);
 
     try {
-      final sigUuid = await _uploadService.uploadBytes(_signatureBytes!);
-      if (sigUuid != null) {
+      if (_localPhotoPath != null) {
         await _queue.enqueue(
           ActionEntry(
             actionType: ActionType.linkPodPhoto,
             payload: {
               'post_dispatch_invoice_id': _invoiceStop!.id,
-              'file': sigUuid,
-              'doc_no': 'SIG-${_invoiceStop!.invoiceNo ?? _invoiceStop!.id}',
+              'local_file_path': _localPhotoPath!,
+              'doc_no': _invoiceStop!.invoiceNo,
             },
             endpoint: '/items/post_dispatch_nte',
             httpMethod: 'POST',
             priority: ActionPriority.normal,
           ),
         );
-      }
-
-      if (_localPhotoPath != null) {
-        final uuid = await _uploadService.uploadFile(_localPhotoPath!);
-        if (uuid != null) {
-          await _queue.enqueue(
-            ActionEntry(
-              actionType: ActionType.linkPodPhoto,
-              payload: {
-                'post_dispatch_invoice_id': _invoiceStop!.id,
-                'file': uuid,
-                'doc_no': _invoiceStop!.invoiceNo,
-              },
-              endpoint: '/items/post_dispatch_nte',
-              httpMethod: 'POST',
-              priority: ActionPriority.normal,
-            ),
-          );
-        }
       }
 
       await tripProvider.updateStopStatus(_invoiceStop!.id, status);

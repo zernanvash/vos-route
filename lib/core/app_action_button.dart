@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 
 class AppActionButton extends StatelessWidget {
@@ -23,16 +24,27 @@ class AppActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final bg = backgroundColor ?? cs.primary;
+    final fg = foregroundColor ?? Colors.white;
+
     final button = ElevatedButton.icon(
       onPressed: onPressed,
       icon: icon != null ? Icon(icon, size: 20) : const SizedBox.shrink(),
-      label: Text(label, style: const TextStyle(fontSize: 16)),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      ),
       style: ElevatedButton.styleFrom(
-        backgroundColor: backgroundColor,
-        foregroundColor: foregroundColor,
+        backgroundColor: bg,
+        foregroundColor: fg,
+        elevation: 0,
         minimumSize: Size(
           expanded ? double.infinity : 0,
           height ?? Insets.buttonHeight,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Insets.cardRadius),
         ),
       ),
     );
@@ -47,8 +59,8 @@ class AppActionButton extends StatelessWidget {
     return AppActionButton(
       onPressed: onPressed,
       label: 'Confirm Departure',
-      icon: Icons.play_arrow,
-      backgroundColor: Colors.blue.shade700,
+      icon: Icons.play_arrow_rounded,
+      backgroundColor: AppColors.primaryLight,
     );
   }
 
@@ -56,8 +68,8 @@ class AppActionButton extends StatelessWidget {
     return AppActionButton(
       onPressed: onPressed,
       label: 'Mark Arrived at Base',
-      icon: Icons.flag,
-      backgroundColor: Colors.blue.shade700,
+      icon: Icons.flag_rounded,
+      backgroundColor: AppColors.primaryLight,
     );
   }
 
@@ -65,8 +77,8 @@ class AppActionButton extends StatelessWidget {
     return AppActionButton(
       onPressed: onPressed,
       label: 'Photo Quest',
-      icon: Icons.camera_alt,
-      backgroundColor: Colors.green.shade700,
+      icon: Icons.camera_alt_rounded,
+      backgroundColor: AppColors.success,
     );
   }
 }

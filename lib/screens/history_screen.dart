@@ -5,9 +5,7 @@ import '../models/trip.dart';
 import 'package:intl/intl.dart';
 import '../core/app_card.dart';
 import '../core/app_status_badge.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -55,19 +53,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Trip History',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        backgroundColor: AppColors.surface,
-        iconTheme: IconThemeData(color: Colors.white),
-      ),
+      appBar: AppBar(title: const Text('Trip History')),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : _trips.isEmpty
-          ? Center(child: Text('No past trips', style: AppTextStyle.caption))
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.history_rounded,
+                    size: 48,
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No past trips',
+                    style: TextStyle(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            )
           : RefreshIndicator(
               onRefresh: _fetchHistory,
               child: ListView.builder(
@@ -79,10 +87,28 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   return AppCard(
                     margin: EdgeInsets.only(bottom: Insets.sm),
                     child: ListTile(
-                      title: Text(t.docNo, style: AppTextStyle.subheading),
+                      leading: CircleAvatar(
+                        backgroundColor: cs.primary.withValues(alpha: 0.1),
+                        child: Icon(
+                          Icons.route_rounded,
+                          color: cs.primary,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        t.docNo,
+                        style: TextStyle(
+                          color: cs.onSurface,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       subtitle: Text(
-                        '${t.vehicle?.vehiclePlate ?? "N/A"} | ${fmt.format(t.dateEncoded)}',
-                        style: AppTextStyle.caption,
+                        '${t.vehicle?.vehiclePlate ?? "N/A"} · ${fmt.format(t.dateEncoded)}',
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
                       ),
                       trailing: AppStatusBadge(status: t.status),
                     ),

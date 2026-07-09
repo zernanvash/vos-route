@@ -1,11 +1,16 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
+import '../network/app_exception.dart';
+import 'secure_storage_service.dart';
 
 class ApiService {
   late final Dio _dio;
   late final Dio _directusDio;
-  static const String _tokenKey = 'vos_access_token';
+
+  final StreamController<int> _unauthorizedController =
+      StreamController<int>.broadcast();
+  Stream<int> get onUnauthorized => _unauthorizedController.stream;
 
   ApiService._();
   static final ApiService _instance = ApiService._();
@@ -36,11 +41,12 @@ class ApiService {
       ),
     );
 
+    final secure = SecureStorageService();
+
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final prefs = await SharedPreferences.getInstance();
-          final token = prefs.getString(_tokenKey);
+          final token = await secure.readToken();
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
           }
@@ -48,8 +54,8 @@ class ApiService {
         },
         onError: (error, handler) async {
           if (error.response?.statusCode == 401) {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove(_tokenKey);
+            await secure.deleteToken();
+            _unauthorizedController.add(401);
           }
           handler.next(error);
         },
@@ -102,17 +108,69 @@ class ApiService {
   }
 
   Future<void> setToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    await SecureStorageService().writeToken(token);
   }
 
   Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
+    return await SecureStorageService().readToken();
   }
 
   Future<void> clearToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
+    await SecureStorageService().deleteToken();
+  }
+
+  // Generic typed wrapper for Directus GET requests
+  Future<T> getDirectusGeneric<T>(
+    String path, {
+    Map<String, dynamic>? queryParams,
+  }) async {
+    try {
+      final response = await _directusDio.get(path, queryParameters: queryParams);
+      return response.data as T;
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  AppException _mapDioError(DioException err) {
+    final statusCode = err.response?.statusCode;
+    final responseData = err.response?.data;
+
+    if (err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.sendTimeout ||
+        err.type == DioExceptionType.receiveTimeout ||
+        err.type == DioExceptionType.connectionError) {
+      return const NetworkException('Network timeout or connection error. Please retry.');
+    } else if (statusCode != null) {
+      if (statusCode == 401) {
+        return const AuthException('Session expired. Please log in again.');
+      } else if (statusCode == 400 || statusCode == 422) {
+        Map<String, dynamic> errors = {};
+        if (responseData is Map<String, dynamic> && responseData.containsKey('errors')) {
+          errors = responseData;
+        }
+        return ValidationException(
+          responseData?['errors']?[0]?['message'] ?? 'Validation failed.',
+          errors,
+        );
+      } else if (statusCode >= 400 && statusCode < 500) {
+        Map<String, dynamic>? body;
+        if (responseData is Map<String, dynamic>) {
+          body = responseData;
+        }
+        return ClientException(
+          responseData?['errors']?[0]?['message'] ?? 'Client error occurred.',
+          statusCode,
+          body: body,
+        );
+      } else {
+        return ServerException(
+          'Server error occurred (HTTP $statusCode). Please retry.',
+          statusCode,
+        );
+      }
+    } else {
+      return NetworkException('An unexpected network error occurred: ${err.message}');
+    }
   }
 }

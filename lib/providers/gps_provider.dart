@@ -10,7 +10,17 @@ class GpsProvider extends ChangeNotifier {
   Position? get lastPosition => _lastPosition;
   bool get isTracking => _isTracking;
 
-  void startTracking(int tripId) {
+  Future<void> startTracking(int tripId) async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) return;
+
     _gpsService.startTracking(tripId);
     _isTracking = true;
     notifyListeners();

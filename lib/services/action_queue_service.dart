@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'api_service.dart';
+import 'upload_service.dart';
 import '../db/database.dart';
 import '../models/action_entry.dart';
 
@@ -94,18 +97,93 @@ class ActionQueueService {
     );
 
     try {
-      final data = entry.payload;
+      dynamic payload;
+      if (entry.payload is List) {
+        payload = List<dynamic>.from(entry.payload as List);
+      } else {
+        payload = Map<String, dynamic>.from(entry.payload as Map);
+      }
 
-      switch (entry.httpMethod.toUpperCase()) {
-        case 'POST':
-          await _api.postDirectus(entry.endpoint, data: data);
-          break;
-        case 'PATCH':
-          await _api.patchDirectus(entry.endpoint, data: data);
-          break;
-        case 'PUT':
-          await _api.put(entry.endpoint, data: data);
-          break;
+      // Sanity-check: a stop-status payload must carry a non-null status.
+      // If null reaches here the call-site is broken; fail permanently so the
+      // error surfaces in the sync log instead of silently reaching the server.
+      if (payload is Map<String, dynamic> &&
+          payload.containsKey('status') &&
+          payload['status'] == null) {
+        throw ArgumentError(
+          'action_queue entry ${entry.id} (${entry.actionType}) has a null status field. '
+          'This is a call-site bug — fix the payload builder, not this executor.',
+        );
+      }
+
+      if (payload is Map<String, dynamic> && payload.containsKey('local_file_path')) {
+        final localFilePath = payload['local_file_path'] as String;
+        final uploadService = UploadService();
+        String? folderUuid;
+        if (entry.actionType == ActionType.linkPodPhoto) {
+          folderUuid = 'd3940009-05ec-4fbd-ae2b-72f581013805';
+        } else if (entry.actionType == ActionType.linkTripPhoto) {
+          folderUuid = '13954431-1352-421b-8bcd-d41963b3d9bd';
+        }
+        final directusFileId = await uploadService.uploadFile(localFilePath, folderUuid: folderUuid);
+        if (directusFileId == null) {
+          throw Exception('Failed to upload local file: $localFilePath');
+        }
+
+        payload.remove('local_file_path');
+        payload['file'] = directusFileId;
+
+        await db.update(
+          'action_queue',
+          {'action_payload': jsonEncode(payload)},
+          where: 'id = ?',
+          whereArgs: [entry.id],
+        );
+      }
+
+      bool alreadyLinked = false;
+      if (payload is Map<String, dynamic> && payload['file'] != null) {
+        if (entry.actionType == ActionType.linkPodPhoto) {
+          final invoiceId = payload['post_dispatch_invoice_id'];
+          final fileId = payload['file'];
+          final res = await _api.getDirectus(
+            '/items/post_dispatch_nte',
+            queryParams: {
+              'filter[post_dispatch_invoice_id][_eq]': invoiceId,
+              'filter[file][_eq]': fileId,
+            },
+          );
+          if ((res.data['data'] as List).isNotEmpty) {
+            alreadyLinked = true;
+          }
+        } else if (entry.actionType == ActionType.linkTripPhoto) {
+          final planId = payload['post_dispatch_plan_id'];
+          final fileId = payload['file'];
+          final res = await _api.getDirectus(
+            '/items/post_dispatch_trip_photos',
+            queryParams: {
+              'filter[post_dispatch_plan_id][_eq]': planId,
+              'filter[file][_eq]': fileId,
+            },
+          );
+          if ((res.data['data'] as List).isNotEmpty) {
+            alreadyLinked = true;
+          }
+        }
+      }
+
+      if (!alreadyLinked) {
+        switch (entry.httpMethod.toUpperCase()) {
+          case 'POST':
+            await _api.postDirectus(entry.endpoint, data: payload);
+            break;
+          case 'PATCH':
+            await _api.patchDirectus(entry.endpoint, data: payload);
+            break;
+          case 'PUT':
+            await _api.put(entry.endpoint, data: payload);
+            break;
+        }
       }
 
       await db.update(
@@ -120,7 +198,17 @@ class ActionQueueService {
           ? '${e.response?.statusCode ?? "unknown"}: ${e.response?.data ?? e.message}'
           : e.toString();
 
-      if (newRetryCount >= _maxRetries) {
+      bool isPermanent = false;
+      if (e is DioException) {
+        final statusCode = e.response?.statusCode;
+        if (statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 401) {
+          isPermanent = true;
+        }
+      } else if (e is TypeError || e is FormatException || e is ArgumentError) {
+        isPermanent = true;
+      }
+
+      if (isPermanent || newRetryCount >= _maxRetries) {
         await db.update(
           'action_queue',
           {
@@ -166,7 +254,7 @@ class ActionQueueService {
       orderBy: 'created_at ASC',
       limit: 50,
     );
-    if (pendingGps.length < 2) return;
+    if (pendingGps.isEmpty) return;
 
     final allPoints = <Map<String, dynamic>>[];
     final ids = <int>[];
@@ -180,11 +268,14 @@ class ActionQueueService {
 
     if (allPoints.isEmpty || ids.isEmpty) return;
 
+    final now = DateTime.now().toIso8601String();
     try {
+      // Directus batch-create returns { "data": [...] } (List), not a single Map.
+      // postDirectus() returns the raw Dio Response — we deliberately do NOT cast
+      // response.data here, so List vs Map does not matter.
       await _api.postDirectus('/items/post_dispatch_gps_logs', data: allPoints);
 
       final batch = db.batch();
-      final now = DateTime.now().toIso8601String();
       for (final id in ids) {
         batch.update(
           'action_queue',
@@ -194,7 +285,11 @@ class ActionQueueService {
         );
       }
       await batch.commit(noResult: true);
-    } catch (_) {}
+    } catch (e) {
+      // Log the failure so it is visible in debug output, but do not rethrow —
+      // GPS batches are best-effort and should not block the rest of the queue.
+      debugPrint('[ActionQueueService] GPS batch POST failed: $e');
+    }
   }
 
   Future<int> getPendingCount() async {

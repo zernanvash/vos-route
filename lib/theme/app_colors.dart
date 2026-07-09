@@ -1,57 +1,116 @@
 import 'package:flutter/material.dart';
 
+/// VOS brand color palette — matches SCM web `globals.css`
+///
+/// Light:  --background: hsl(240 6% 98.5%)   --card: hsl(0 0% 100%)
+///         --primary:    hsl(224 76% 48%)
+/// Dark:   --background: hsl(240 10% 3.2%)   --card: hsl(240 8% 6.5%)
+///         --primary:    hsl(224 76% 56%)
 class AppColors {
   AppColors._();
 
-  // Surfaces
-  static const Color background = Colors.black;
-  static const Color surface = Color(0xFF1E1E1E); // grey.shade900
-  static const Color surfaceVariant = Color(0xFF2D2D2D); // grey.shade800
-  static const Color surfaceElevated = Color(0xFF333333); // grey.shade700
+  // ── Brand ──────────────────────────────────────────────────────────────
+  /// VOS brand blue – light mode primary (hsl 224 76% 48%)
+  static const Color primaryLight = Color(0xFF1D4ED8);
 
-  // Primary
-  static const Color primary = Color(0xFF1565C0); // blue.shade800
-  static const Color primaryLight = Color(0xFF64B5F6); // blue.shade300
-  static const Color primaryDark = Color(0xFF0D47A1); // blue.shade900
-  static const Color primaryContainer = Color(0xFF1A237E);
+  /// VOS brand blue – dark mode primary (hsl 224 76% 56%)
+  static const Color primaryDark = Color(0xFF3B6EF0);
 
-  // Gradient
-  static const List<Color> primaryGradient = [
-    Color(0xFF0D47A1),
-    Color(0xFF1565C0),
+  // ── Gradient ────────────────────────────────────────────────────────────
+  static const List<Color> brandGradientDark = [
+    Color(0xFF1A3FBD),
+    Color(0xFF1D4ED8),
+  ];
+  static const List<Color> brandGradientLight = [
+    Color(0xFF1D4ED8),
+    Color(0xFF3B6EF0),
   ];
 
-  // Text
-  static const Color textPrimary = Colors.white;
-  static const Color textSecondary = Color(0xFFBDBDBD); // grey.shade400
-  static const Color textTertiary = Color(0xFF9E9E9E); // grey.shade500
-  static const Color textDisabled = Color(0xFF616161); // grey.shade700
+  // ── Surfaces – DARK (hsl values from VOS web .dark) ────────────────────
+  /// hsl(240 10% 3.2%) – deepest background
+  static const Color darkBackground = Color(0xFF080810);
 
-  // Status
-  static const Color success = Color(0xFF66BB6A); // green.shade400
-  static const Color successDark = Color(0xFF2E7D32); // green.shade800
-  static const Color error = Color(0xFFEF5350); // red.shade300
-  static const Color errorDark = Color(0xFFC62828); // red.shade800
-  static const Color warning = Color(0xFFFFB74D); // orange.shade300
-  static const Color warningDark = Color(0xFFE65100); // orange.shade800
-  static const Color info = Color(0xFF64B5F6); // blue.shade300
+  /// hsl(240 8% 6.5%) – card surface
+  static const Color darkSurface = Color(0xFF0F0F1A);
 
-  // Borders
-  static const Color border = Color(0xFF424242); // grey.shade800
-  static const Color borderLight = Color(0xFF616161); // grey.shade700
+  /// hsl(240 5% 12%) – secondary surface
+  static const Color darkSurfaceVariant = Color(0xFF1A1A22);
 
-  // Invoice statuses
-  static const Color fulfilled = Color(0xFF4CAF50); // green
-  static const Color notFulfilled = Color(0xFFF44336); // red
-  static const Color fulfilledWithReturns = Color(0xFFFF9800); // orange
-  static const Color fulfilledWithConcerns = Color(0xFFFFC107); // amber
-  static const Color pending = Color(0xFF9E9E9E); // grey
+  /// hsl(240 5% 12.5%) – accent/hover surface
+  static const Color darkSurfaceElevated = Color(0xFF1C1C25);
 
-  // Trip statuses
-  static const Color forDispatch = Color(0xFF64B5F6); // blue.shade300
-  static const Color forInbound = Color(0xFFFFB74D); // orange.shade300
-  static const Color forClearance = Color(0xFFFFD54F); // amber.shade300
-  static const Color posted = Color(0xFF81C784); // green.shade300
+  /// hsl(240 4% 14%) – borders
+  static const Color darkBorder = Color(0xFF1F1F27);
+
+  // ── Surfaces – LIGHT (hsl values from VOS web :root) ───────────────────
+  /// hsl(240 6% 98.5%) – page background
+  static const Color lightBackground = Color(0xFFF7F7FB);
+
+  /// hsl(0 0% 100%) – card surface
+  static const Color lightSurface = Color(0xFFFFFFFF);
+
+  /// hsl(240 6% 96.5%) – secondary surface / muted
+  static const Color lightSurfaceVariant = Color(0xFFF2F2F7);
+
+  /// hsl(240 6% 96%) – accent hover
+  static const Color lightSurfaceElevated = Color(0xFFF0F0F6);
+
+  /// hsl(240 6% 88%) – borders
+  static const Color lightBorder = Color(0xFFDDDDE8);
+
+  // ── Text – dark theme ───────────────────────────────────────────────────
+  static const Color darkTextPrimary = Color(0xFFFAFAFA);
+  static const Color darkTextSecondary = Color(0xFFADADB8);
+  static const Color darkTextTertiary = Color(0xFF6B6B7A);
+
+  // ── Text – light theme ──────────────────────────────────────────────────
+  static const Color lightTextPrimary = Color(0xFF0A0A10);
+  static const Color lightTextSecondary = Color(0xFF4A4A5A);
+  static const Color lightTextTertiary = Color(0xFF8A8A9A);
+
+  // ── Status (same on both themes, vivid enough for both) ─────────────────
+  static const Color fulfilled = Color(0xFF22C55E); // green-500
+  static const Color notFulfilled = Color(0xFFEF4444); // red-500
+  static const Color fulfilledWithReturns = Color(0xFFF97316); // orange-500
+  static const Color fulfilledWithConcerns = Color(0xFFEAB308); // yellow-500
+  static const Color pending = Color(0xFF71717A); // zinc-500
+
+  // ── Trip status ─────────────────────────────────────────────────────────
+  static const Color forDispatch = Color(0xFF3B82F6); // blue-500
+  static const Color forInbound = Color(0xFFF97316); // orange-500
+  static const Color forClearance = Color(0xFFEAB308); // yellow-500
+  static const Color posted = Color(0xFF22C55E); // green-500
+
+  // ── Semantic ────────────────────────────────────────────────────────────
+  static const Color success = Color(0xFF22C55E);
+  static const Color successDark = Color(0xFF166534);
+  static const Color error = Color(0xFFEF4444);
+  static const Color errorDark = Color(0xFF991B1B);
+  static const Color warning = Color(0xFFF97316);
+  static const Color warningDark = Color(0xFF9A3412);
+  static const Color info = Color(0xFF3B82F6);
+
+  // ── Legacy compat aliases (for screens not yet fully migrated) ───────────
+  /// Use Theme.of(context).colorScheme.surface in new code
+  static const Color surface = darkSurface;
+
+  /// Use Theme.of(context).colorScheme.surfaceContainerHigh in new code
+  static const Color surfaceVariant = darkSurfaceVariant;
+
+  /// Use Theme.of(context).colorScheme.onSurface in new code
+  static const Color textPrimary = darkTextPrimary;
+
+  /// Use Theme.of(context).colorScheme.onSurfaceVariant in new code
+  static const Color textSecondary = darkTextSecondary;
+
+  /// Use Theme.of(context).colorScheme.onSurfaceVariant in new code
+  static const Color textTertiary = darkTextTertiary;
+
+  /// Use Theme.of(context).colorScheme.outlineVariant in new code
+  static const Color border = darkBorder;
+
+  /// Use Theme.of(context).colorScheme.primary in new code
+  static const Color primary = primaryDark;
 }
 
 extension AppColorExtension on String {
@@ -81,7 +140,7 @@ extension AppColorExtension on String {
       case 'Posted':
         return AppColors.posted;
       default:
-        return AppColors.textTertiary;
+        return AppColors.pending;
     }
   }
 }

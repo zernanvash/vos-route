@@ -1,5 +1,5 @@
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
 
 class UploadService {
@@ -11,11 +11,15 @@ class UploadService {
     ),
   );
 
-  Future<String?> uploadFile(String filePath) async {
+  Future<String?> uploadFile(String filePath, {String? folderUuid}) async {
     try {
-      final formData = FormData.fromMap({
+      final Map<String, dynamic> uploadData = {
         'file': await MultipartFile.fromFile(filePath),
-      });
+      };
+      if (folderUuid != null) {
+        uploadData['folder'] = folderUuid;
+      }
+      final formData = FormData.fromMap(uploadData);
 
       final response = await _dio.post(
         '/files',
@@ -26,7 +30,14 @@ class UploadService {
       );
 
       return response.data['data']['id'] as String?;
-    } catch (_) {
+    } catch (e, stack) {
+      debugPrint('[UploadService] uploadFile failed for path: $filePath');
+      debugPrint('[UploadService] Error: $e');
+      if (e is DioException) {
+        debugPrint('[UploadService] Dio Status Code: ${e.response?.statusCode}');
+        debugPrint('[UploadService] Dio Response Body: ${e.response?.data}');
+      }
+      debugPrint(stack.toString());
       return null;
     }
   }

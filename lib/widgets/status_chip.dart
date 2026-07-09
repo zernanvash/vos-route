@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 class StatusChip extends StatelessWidget {
   final String status;
@@ -7,46 +8,51 @@ class StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (Color bg, Color fg) = _colors(status);
+    final (Color statusColor, String label) = _resolve(status);
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
+        color: statusColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
       ),
       child: Text(
-        status,
-        style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600),
+        label,
+        style: TextStyle(
+          color: statusColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
 
-  (Color, Color) _colors(String status) {
+  (Color, String) _resolve(String status) {
     switch (status) {
       case 'Fulfilled':
-        return (Colors.green.shade800, Colors.green.shade200);
+        return (AppColors.fulfilled, 'Fulfilled');
       case 'Not Fulfilled':
-        return (Colors.red.shade800, Colors.red.shade200);
+        return (AppColors.notFulfilled, 'Not Fulfilled');
       case 'Fulfilled with Returns':
-        return (Colors.orange.shade800, Colors.orange.shade200);
+        return (AppColors.fulfilledWithReturns, 'With Returns');
       case 'Fulfilled with Concerns':
-        return (Colors.amber.shade800, Colors.amber.shade200);
+        return (AppColors.fulfilledWithConcerns, 'With Concerns');
       case 'In Progress':
-        return (Colors.blue.shade800, Colors.blue.shade200);
+        return (AppColors.info, 'In Progress');
       case 'Pending':
-        return (Colors.grey.shade800, Colors.grey.shade400);
+        return (AppColors.pending, 'Pending');
       case 'For Dispatch':
-        return (Colors.blue.shade800, Colors.blue.shade200);
+        return (AppColors.forDispatch, 'For Dispatch');
       case 'For Inbound':
-        return (Colors.teal.shade800, Colors.teal.shade200);
+        return (AppColors.forInbound, 'For Inbound');
       case 'For Clearance':
-        return (Colors.purple.shade800, Colors.purple.shade200);
+        return (AppColors.forClearance, 'For Clearance');
       case 'Posted':
-        return (Colors.green.shade800, Colors.green.shade200);
+        return (AppColors.posted, 'Posted');
       case 'Cancelled':
-        return (Colors.grey.shade700, Colors.grey.shade400);
+        return (AppColors.pending, 'Cancelled');
       default:
-        return (Colors.grey.shade800, Colors.grey.shade400);
+        return (AppColors.pending, status);
     }
   }
 }

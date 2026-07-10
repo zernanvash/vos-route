@@ -12,8 +12,6 @@ class BackgroundService {
   factory BackgroundService() => _instance;
 
   final FlutterBackgroundService _service = FlutterBackgroundService();
-  Timer? _gpsTimer;
-  int? _activeTripId;
   bool _started = false;
 
   static const String _channelId = 'vosroute_bg_channel';
@@ -64,52 +62,69 @@ class BackgroundService {
   }
 
   void startTracking(int tripId) {
-    _activeTripId = tripId;
     _service.invoke('setActiveTrip', {'tripId': tripId});
-    _updateNotification();
+    _updateNotification(tripId);
   }
 
   void stopTracking() {
-    _activeTripId = null;
     _service.invoke('setActiveTrip', {'tripId': null});
-    _gpsTimer?.cancel();
-    _gpsTimer = null;
-    _updateNotification();
+    _updateNotification(null);
   }
 
-  void _onStart(ServiceInstance service) {
-    if (service is AndroidServiceInstance) {
-      service.on('setForegroundText').listen((event) {
-        final data = event;
-        if (data != null && data['title'] != null && data['content'] != null) {
-          service.setForegroundNotificationInfo(
-            title: data['title'] as String,
-            content: data['content'] as String,
-          );
-        }
-      });
-    }
+  void _updateNotification(int? tripId) {
+    final title = 'VOSRoute';
+    final content = tripId != null
+        ? 'Tracking trip #$tripId'
+        : 'Monitoring pending sync';
+    _service.invoke('setForegroundText', {'title': title, 'content': content});
+  }
 
-    service.on('stopService').listen((_) {
-      _gpsTimer?.cancel();
-      service.stopSelf();
-    });
+  Future<void> stop() async {
+    _started = false;
+    _service.invoke('stopService');
+  }
+}
 
-    service.on('setActiveTrip').listen((event) {
+// ── Top-level isolate callbacks ────────────────────────────────────────────
+// flutter_background_service requires onStart/onForeground to be top-level or
+// static functions, not instance methods.
+
+void _onStart(ServiceInstance service) {
+  int? activeTripId;
+  Timer? gpsTimer;
+
+  if (service is AndroidServiceInstance) {
+    service.on('setForegroundText').listen((event) {
       final data = event;
-      _activeTripId = data?['tripId'] as int?;
-      _updateNotification();
+      if (data != null && data['title'] != null && data['content'] != null) {
+        service.setForegroundNotificationInfo(
+          title: data['title'] as String,
+          content: data['content'] as String,
+        );
+      }
     });
-
-    _gpsTimer = Timer.periodic(
-      Duration(seconds: AppConfig.gpsIntervalSeconds),
-      (_) => _captureAndQueueGps(),
-    );
   }
 
-  Future<void> _captureAndQueueGps() async {
+  service.on('stopService').listen((_) {
+    gpsTimer?.cancel();
+    service.stopSelf();
+  });
+
+  service.on('setActiveTrip').listen((event) {
+    final data = event;
+    activeTripId = data?['tripId'] as int?;
+    if (service is AndroidServiceInstance) {
+      final title = 'VOSRoute';
+      final content = activeTripId != null
+          ? 'Tracking trip #$activeTripId'
+          : 'Monitoring pending sync';
+      service.setForegroundNotificationInfo(title: title, content: content);
+    }
+  });
+
+  Future<void> captureAndQueueGps() async {
     // Capture the trip ID this tick belongs to BEFORE the async gap.
-    final tripId = _activeTripId;
+    final tripId = activeTripId;
     if (tripId == null) return;
 
     try {
@@ -122,7 +137,7 @@ class BackgroundService {
 
       // Guard against both null-out (stopTracking) and trip-switch
       // (startTracking with a new trip) during the async gap above.
-      if (_activeTripId != tripId) return;
+      if (activeTripId != tripId) return;
 
       final point = {
         'trip_id': tripId,
@@ -153,17 +168,8 @@ class BackgroundService {
     }
   }
 
-  void _updateNotification() {
-    final title = 'VOSRoute';
-    final content = _activeTripId != null
-        ? 'Tracking trip #$_activeTripId'
-        : 'Monitoring pending sync';
-    _service.invoke('setForegroundText', {'title': title, 'content': content});
-  }
-
-  Future<void> stop() async {
-    _gpsTimer?.cancel();
-    _started = false;
-    _service.invoke('stopService');
-  }
+  gpsTimer = Timer.periodic(
+    Duration(seconds: AppConfig.gpsIntervalSeconds),
+    (_) => captureAndQueueGps(),
+  );
 }

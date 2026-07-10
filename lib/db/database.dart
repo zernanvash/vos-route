@@ -82,7 +82,7 @@ class AppDatabase {
           final tripId = row['trip_id'] as int? ?? 0;
           final points = [
             {
-              'post_dispatch_plan_id': tripId,
+              'trip_id': tripId,
               'latitude': row['latitude'],
               'longitude': row['longitude'],
               'accuracy': row['accuracy'],

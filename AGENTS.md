@@ -1,6 +1,5 @@
 # AGENTS.md — VOSRoute (Fleet Dispatch Mobile App)
 
-> **Status**: Prototype. All 10 screens + 4 providers + 7 services + 6 models + 5 widgets exist and are wired.
 > **Architecture**: Directus REST API for all operational queries/mutations. Spring Boot `ERP_SERVER` for auth only (+ FCM token registration).
 > Design doc at `docs/VOSRoute-Documentation.md` is the architecture reference but may conflict with code — code is truth.
 
@@ -13,7 +12,7 @@ Part of the SCM monorepo at `../`. All work logged in `../scm-vault/supply-chain
 
 | Instance | Base URL | Auth | Used For |
 |---|---|---|---|
-| `_dio` | Spring Boot `:8082` | JWT Bearer (injected via interceptor from `vos_access_token` in SharedPreferences) | Login, FCM token registration |
+| `_dio` | Spring Boot `:8082` | JWT Bearer (injected via interceptor from `SecureStorageService`) | Login, FCM token registration |
 | `_directusDio` | Directus `:8056` | Static token `AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW` in header | **All** operational data: trip fetch, stop updates, GPS logs, photos, SOS, etc. |
 
 **Key gotcha**: JWT is NEVER sent to Directus. Directus calls use a fixed static token hardcoded in `AppConfig`. The Spring Boot JWT is NOT used for operational data — only for `/auth/login` and `/api/dispatch/mobile/register-device`.
@@ -27,7 +26,7 @@ Part of the SCM monorepo at `../`. All work logged in `../scm-vault/supply-chain
 | `POST` | `/auth/login` | `{ email, hashPassword }` | Returns `{ token }` (NOT `access_token`). Field is `hashPassword` (NOT `password`). |
 | `POST` | `/api/dispatch/mobile/register-device` | `{ fcmToken, deviceInfo }` | Registers FCM token. Called from `NotificationService`. |
 
-Driver profile is fetched from **Directus** (`/items/user?filter[user_email][_eq]=...`), NOT from Spring Boot `/auth/me` — despite the doc saying otherwise. `DriverProfile.fromJson` handles both camelCase and snake_case fields.
+Driver profile is fetched from **Directus** (`/items/user?filter[user_email][_eq]=...`), NOT from Spring Boot `/auth/me`. `DriverProfile.fromJson` handles both camelCase and snake_case fields.
 
 ### 2. Directus CMS (`http://100.110.197.61:8056`) — All operational data
 
@@ -57,59 +56,62 @@ Static token: `AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW`
 
 1. Capture via `image_picker` → save local path
 2. Upload to Directus `POST /files` via `UploadService` → get UUID
-3. Insert into local queue table (`pod_queue` / `trip_photo_queue`) with UUID and local path
-4. `SyncService` later links UUID to Directus collection (`post_dispatch_nte` / `post_dispatch_trip_photos`)
+3. `ActionQueueService` later links the UUID to the Directus collection (`post_dispatch_nte` / `post_dispatch_trip_photos`). The `ActionEntry` payload carries a `local_file_path`; the executor uploads it to a fixed folder (`d3940009-…` for POD, `13954431-…` for trip photos) before sending. Watch for duplicate links — the executor de-dupes by checking the target collection for an existing `file` + parent id.
 
-## Offline-first architecture
+## Offline-first architecture — unified `action_queue`
 
-All writes go to local SQLite **first**, then sync. DB version 2 (`vosroute.db`):
-- `cached_trips` — full trip payload as JSON blob
-- `gps_queue` — GPS points with `synced` flag
-- `pod_queue` — POD photos with `synced` flag
-- `trip_photo_queue` — trip photos with `synced` flag
-- `emergency_queue` — SOS reports with `synced` flag
-- `ad_hoc_stop_queue` — ad-hoc stops with `synced` flag
+All writes are enqueued to a local SQLite table `action_queue` (db `vosroute.db`, **version 3**), then flushed by `ActionQueueService` (`lib/services/action_queue_service.dart`):
 
-**Migration (v1→v2)**: adds `driver_user_id` column to `emergency_queue`.
+- Triggered by `connectivity_plus` reconnect + a `Timer.periodic(10s)`.
+- Processes GPS batches first, then pending actions by `batch_priority` (1 → 2 → 3).
+- GPS points are coalesced into batches of **50** and POSTed as one array to `post_dispatch_gps_logs`.
+- Retry: exponential backoff (1/2/4/8/16/30s), max 5 attempts. Client 4xx (except 401) and type errors are marked **permanently failed**. `sync_log_screen` shows pending/failed entries with retry + clear.
+- **Legacy tables** (`cached_trips`, `gps_queue`, `pod_queue`, `trip_photo_queue`, `emergency_queue`, `ad_hoc_stop_queue`) were folded into `action_queue` during the **v2→v3** migration. Do not rely on them.
 
-**SyncService** (`lib/services/sync_service.dart`): monitors `connectivity_plus` for reconnect + periodic 30s timer. Flushes `gps_queue` (batched), `pod_queue`, `trip_photo_queue`, `emergency_queue` in order. GPS batch size: 50 points.
+**Two `AppDatabase` classes exist** — be careful which you import:
+- `lib/db/database.dart` — **sqflite**, the real operational DB (`action_queue`, `vosroute.db`). Used by `ActionQueueService`.
+- `lib/db/app_database.dart` — **Drift**, a separate small DB holding only the `CachedSettings` table (`vosroute_drift.db`). Used at startup via `executor.ensureOpen()`.
 
 ## GPS tracking
 
-- Timer-based (NOT geolocator stream): `Timer.periodic(60s)` calls `Geolocator.getCurrentPosition()` each tick
-- Queued to `gps_queue` locally, synced in batches to `POST /items/post_dispatch_gps_logs`
-- **Starts** on departure confirm, **stops** on arrived-at-base
+- Timer-based (NOT geolocator stream): `Timer.periodic(60s)` calls `Geolocator.getCurrentPosition()` each tick (`AppConfig.gpsIntervalSeconds`).
+- **Starts** on departure confirm, **stops** on arrived-at-base (or app dispose). Reactivated on startup if an in-progress trip has a `timeOfDispatch`.
 
 ## Codebase map
 
-| Directory | Key files |
+| Layer | Key files |
 |---|---|
-| `lib/config/` | `app_config.dart` — hardcoded URLs, intervals, static token |
-| `lib/models/` | 6 models: `trip`, `stop`, `gps_log`, `pod`, `trip_photo`, `emergency_report` |
-| `lib/services/` | `api_service` (two Dio instances), `auth_service`, `gps_service` (timer), `sync_service` (flush), `upload_service` (Directus files), `notification_service` (FCM), `emergency_service`, `map_launch_service` (Waze/Google) |
-| `lib/providers/` | `auth_provider`, `trip_provider` (parallel fetch + mutations), `gps_provider`, `sync_provider` |
-| `lib/db/` | `database` (schema + migration), `trip_dao`, `queue_dao` |
-| `lib/screens/` | 11 screens: `login`, `home` (dashboard — `fl_chart` pie of invoice statuses + active/pending DP queue), `dispatch_plans` (active DP header + Confirm Departure/Arrive actions + trip details/crew/progress + pending plans list), `stops` (customer-grouped with aggregate indicators + inline status), `stop_detail` (required signature upload flow), `map` (maplibre_gl + OpenFreeMap tiles, customer/other-stop markers from active DP), `budget` (per-DP header cards with budget lines + subtotals), `trip_photos`, `history`, `sos`, `settings`. Bottom nav: Home/Plans/Stops/Map/More (5 tabs). |
-| `lib/widgets/` | `stop_card`, `signature_pad`, `photo_capture_sheet`, `status_chip`, `sync_indicator` |
+| `lib/config/` | `app_config.dart` — hardcoded URLs, intervals, static token, map style |
+| `lib/models/` | 6 models: `trip`, `stop`, `driver_profile`, `emergency_report`, `photo_quest`, `action_entry` |
+| `lib/services/` | `api_service` (two Dio instances), `auth_service`, `action_queue_service` (offline flush), `gps_service` (timer), `upload_service` (Directus files), `notification_service` (FCM), `emergency_service`, `map_launch_service` (Waze/Google via `url_launcher`), `background_service`, `secure_storage_service`, `timezone_service` |
+| `lib/providers/` | `auth_provider`, `trip_provider` (parallel fetch + mutations, owns bottom-nav tab index), `action_queue_provider` (drives the flush timer), `gps_provider`, `theme_provider` |
+| `lib/db/` | `database.dart` (sqflite schema + v2→v3 migration), `app_database.dart` + `tables/` + `daos/` (Drift, `CachedSettings` only) |
+| `lib/screens/` | `login`, `home` (dashboard — `fl_chart` pie of invoice statuses + active/pending DP queue), `dispatch_plans` (active DP header + Confirm Departure/Arrive + trip details/crew/progress + pending plans list), `stops_list` (customer-grouped with aggregate indicators + inline status), `stop_detail` (embedded **maplibre** map + required signature upload flow), `budget`, `trip_photos`, `history`, `sos`, `settings`, `quest_screen` (Photo Quest feature), `sync_log_screen` (offline queue visibility) |
+| `lib/widgets/` | `stop_card`, `signature_pad`, `photo_capture_sheet`, `status_chip` |
+
+**Bottom nav: 4 tabs** — Home / Plans / Stops / More (NavigationBar in `main.dart`). There is **no Map tab**; the map is embedded inside `stop_detail_screen` via `maplibre_gl` + OpenFreeMap tiles.
 
 ## Key conventions and gotchas
 
-- **Offline-first**: all writes queue to SQLite; `TripProvider` falls back to `_loadFromCache()` on network failure
+- **Offline-first**: all writes enqueue to `action_queue`; `TripProvider` falls back to cache on network failure.
 - **Schema discipline**: Do NOT create, alter, or add columns/tables to Directus collections (or any backend schema) unless explicitly instructed by the user. Flag the schema need in plan/doc instead.
-- **Error handling**: most service methods silently catch exceptions and `print()` to debug console — no user-facing retry mechanisms except TripProvider error state
-- **Auth**: JWT in SharedPreferences key `vos_access_token`. On 401, token is cleared (interceptor). No auto-redirect to login.
-- **Stop status values**: `Fulfilled`, `Not Fulfilled`, `Fulfilled with Returns`, `Fulfilled with Concerns`
-- **Trip statuses** (driver transitions): `For Dispatch` → `For Inbound` (depart) → `For Clearance` (arrive base). `For Approval`/`For Clearance`/`Posted`/`Cancelled` are dispatcher-only.
-- **Confirmation dialogs**: required for SOS, Arrive, Depart. Uses `_showActionDialog` pattern with optional remarks text field.
-- **Map navigation**: `MapLaunchService` opens address in Google Maps, Waze, or generic maps via `url_launcher`
-- **External nav buttons**: shown in `StopDetailScreen` for invoice stops with addresses
-- **Dark theme**, Material 3, 48dp min touch targets, bottom nav with 4 tabs
-- **Deprecated `fleet-emergency-app`** legacy code is absorbed into `SosScreen` + `EmergencyService` + `EmergencyReport`
+- **Error handling**: most service methods catch exceptions and `debugPrint()` — no user-facing retry except the `sync_log_screen` (retry/clear failed actions).
+- **Auth token**: stored in `SecureStorageService` (`flutter_secure_storage`), NOT SharedPreferences. On 401 the interceptor deletes the token and emits `onUnauthorized`. No auto-redirect to login.
+- **Stop status values**: `Fulfilled`, `Not Fulfilled`, `Fulfilled with Returns`, `Fulfilled with Concerns`.
+- **Trip statuses** (driver transitions): `For Dispatch` → `For Inbound` (depart) → `For Clearance` (arrive base). Others (`For Approval`/`Posted`/`Cancelled`) are dispatcher-only.
+- **Confirmation dialogs**: required for SOS, Arrive, Depart (`_showActionDialog` pattern with optional remarks field).
+- **Drift codegen**: editing `lib/db/app_database.dart` or `lib/db/tables/*` requires regenerating `*.g.dart`:
+  ```bash
+  dart run build_runner build --delete-conflicting-outputs
+  ```
+- **Deprecated `fleet-emergency-app`** legacy code is absorbed into `SosScreen` + `EmergencyService` + `EmergencyReport`.
 
 ## Verification
 
 ```bash
-flutter analyze          # uses flutter_lints ^6.0.0 (default rules)
+flutter pub get
+flutter analyze          # flutter_lints ^6.0.0 (default rules)
 dart format lib/
+# After editing Drift tables / app_database:
+dart run build_runner build --delete-conflicting-outputs
 ```
-

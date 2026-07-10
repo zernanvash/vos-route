@@ -55,6 +55,15 @@ class AppActionButton extends StatelessWidget {
     return button;
   }
 
+  static AppActionButton invoice({required VoidCallback? onPressed}) {
+    return AppActionButton(
+      onPressed: onPressed,
+      label: 'Invoices',
+      icon: Icons.receipt_long_rounded,
+      backgroundColor: AppColors.success,
+    );
+  }
+
   static AppActionButton departure({required VoidCallback? onPressed}) {
     return AppActionButton(
       onPressed: onPressed,

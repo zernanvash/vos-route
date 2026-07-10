@@ -24,18 +24,9 @@ class PhotoQuestItem {
     this.stopStatus,
   });
 
-  bool get isComplete =>
-      photoCaptured &&
-      stopStatus != null &&
-      stopStatus != 'Pending' &&
-      stopStatus != 'En Route';
+  bool get isComplete => photoCaptured;
 
   bool get needsPhoto => !photoCaptured;
-  bool get needsStatus =>
-      photoCaptured &&
-      (stopStatus == null ||
-          stopStatus == 'Pending' ||
-          stopStatus == 'En Route');
 }
 
 class PhotoQuest {

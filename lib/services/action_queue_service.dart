@@ -108,30 +108,47 @@ class ActionQueueService {
       // If null reaches here the call-site is broken; fail permanently so the
       // error surfaces in the sync log instead of silently reaching the server.
       if (payload is Map<String, dynamic> &&
-          payload.containsKey('status') &&
-          payload['status'] == null) {
+          (entry.actionType == ActionType.updateStopStatus ||
+              entry.actionType == ActionType.confirmDeparture ||
+              entry.actionType == ActionType.markArrived) &&
+          (!payload.containsKey('status') || payload['status'] == null)) {
         throw ArgumentError(
-          'action_queue entry ${entry.id} (${entry.actionType}) has a null status field. '
+          'action_queue entry ${entry.id} (${entry.actionType}) has a null or missing status field. '
           'This is a call-site bug — fix the payload builder, not this executor.',
         );
       }
 
-      if (payload is Map<String, dynamic> && payload.containsKey('local_file_path')) {
+      if (payload is Map<String, dynamic> &&
+          payload.containsKey('local_file_path')) {
+        // Normalize old-format payloads that used post_dispatch_plan_id/file
+        // instead of trip_id/directus_uuid (pre-field-name-fix entries).
+        // TODO: remove once all pre-fix queue entries have been processed/cleared.
+        if (entry.actionType == ActionType.linkTripPhoto) {
+          if (payload.containsKey('post_dispatch_plan_id') &&
+              !payload.containsKey('trip_id')) {
+            payload['trip_id'] = payload['post_dispatch_plan_id'];
+            payload.remove('post_dispatch_plan_id');
+          }
+          if (payload.containsKey('file') &&
+              !payload.containsKey('directus_uuid')) {
+            payload['directus_uuid'] = payload['file'];
+            payload.remove('file');
+          }
+        }
+
         final localFilePath = payload['local_file_path'] as String;
         final uploadService = UploadService();
-        String? folderUuid;
-        if (entry.actionType == ActionType.linkPodPhoto) {
-          folderUuid = 'd3940009-05ec-4fbd-ae2b-72f581013805';
-        } else if (entry.actionType == ActionType.linkTripPhoto) {
-          folderUuid = '13954431-1352-421b-8bcd-d41963b3d9bd';
-        }
-        final directusFileId = await uploadService.uploadFile(localFilePath, folderUuid: folderUuid);
+        const tripPhotoFolder = '13954431-1352-421b-8bcd-d41963b3d9bd';
+        final directusFileId = await uploadService.uploadFile(
+          localFilePath,
+          folderUuid: tripPhotoFolder,
+        );
         if (directusFileId == null) {
           throw Exception('Failed to upload local file: $localFilePath');
         }
 
         payload.remove('local_file_path');
-        payload['file'] = directusFileId;
+        payload['directus_uuid'] = directusFileId;
 
         await db.update(
           'action_queue',
@@ -142,32 +159,28 @@ class ActionQueueService {
       }
 
       bool alreadyLinked = false;
-      if (payload is Map<String, dynamic> && payload['file'] != null) {
-        if (entry.actionType == ActionType.linkPodPhoto) {
-          final invoiceId = payload['post_dispatch_invoice_id'];
-          final fileId = payload['file'];
-          final res = await _api.getDirectus(
-            '/items/post_dispatch_nte',
-            queryParams: {
-              'filter[post_dispatch_invoice_id][_eq]': invoiceId,
-              'filter[file][_eq]': fileId,
-            },
-          );
-          if ((res.data['data'] as List).isNotEmpty) {
-            alreadyLinked = true;
-          }
-        } else if (entry.actionType == ActionType.linkTripPhoto) {
-          final planId = payload['post_dispatch_plan_id'];
-          final fileId = payload['file'];
-          final res = await _api.getDirectus(
-            '/items/post_dispatch_trip_photos',
-            queryParams: {
-              'filter[post_dispatch_plan_id][_eq]': planId,
-              'filter[file][_eq]': fileId,
-            },
-          );
-          if ((res.data['data'] as List).isNotEmpty) {
-            alreadyLinked = true;
+      if (payload is Map<String, dynamic> &&
+          payload['directus_uuid'] != null) {
+        if (entry.actionType == ActionType.linkPodPhoto ||
+            entry.actionType == ActionType.linkTripPhoto) {
+          final planId = payload['trip_id'];
+          final fileId = payload['directus_uuid'];
+          // Skip dedup if either value is null or empty — avoids Directus
+          // rejecting filter[_eq] with an empty string.
+          if (planId != null &&
+              fileId != null &&
+              '$planId'.isNotEmpty &&
+              '$fileId'.isNotEmpty) {
+            final res = await _api.getDirectus(
+              '/items/post_dispatch_trip_photos',
+              queryParams: {
+                'filter[trip_id][_eq]': planId,
+                'filter[directus_uuid][_eq]': fileId,
+              },
+            );
+            if ((res.data['data'] as List).isNotEmpty) {
+              alreadyLinked = true;
+            }
           }
         }
       }
@@ -201,7 +214,10 @@ class ActionQueueService {
       bool isPermanent = false;
       if (e is DioException) {
         final statusCode = e.response?.statusCode;
-        if (statusCode != null && statusCode >= 400 && statusCode < 500 && statusCode != 401) {
+        if (statusCode != null &&
+            statusCode >= 400 &&
+            statusCode < 500 &&
+            statusCode != 401) {
           isPermanent = true;
         }
       } else if (e is TypeError || e is FormatException || e is ArgumentError) {
@@ -343,6 +359,11 @@ class ActionQueueService {
   Future<void> clearCompleted() async {
     final db = await _db.database;
     await db.delete('action_queue', where: "status = 'completed'");
+  }
+
+  Future<void> clearFailed() async {
+    final db = await _db.database;
+    await db.delete('action_queue', where: "status = 'failed'");
   }
 
   Future<void> clearAll() async {

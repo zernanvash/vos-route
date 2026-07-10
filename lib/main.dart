@@ -213,6 +213,8 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  late final PageController _pageController;
+  int _lastSettledIndex = 0;
   final _screens = [
     const HomeScreen(),
     const DispatchPlansScreen(),
@@ -223,13 +225,13 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final trip = context.read<TripProvider>();
       final gps = context.read<GpsProvider>();
 
       await BackgroundService().ensureInitialized();
-      await trip.fetchActiveTrip();
-      await trip.fetchPendingPlans();
+      await trip.fetchAllCachedData();
       if (trip.activeTrip?.timeOfDispatch != null && !gps.isTracking) {
         gps.startTracking(trip.activeTrip!.id);
       }
@@ -239,8 +241,20 @@ class _MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     BackgroundService().stop();
     super.dispose();
+  }
+
+  void _syncPageIfNeeded(int targetIndex) {
+    final currentPage = _pageController.page?.round();
+    if (currentPage != null && currentPage != targetIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _pageController.jumpToPage(targetIndex);
+        }
+      });
+    }
   }
 
   @override
@@ -249,8 +263,18 @@ class _MainShellState extends State<MainShell> {
     final currentIndex = trip.currentTabIndex;
     final cs = Theme.of(context).colorScheme;
 
+    if (currentIndex != _lastSettledIndex) {
+      _lastSettledIndex = currentIndex;
+      _syncPageIfNeeded(currentIndex);
+    }
+
     return Scaffold(
-      body: IndexedStack(index: currentIndex, children: _screens),
+      body: PageView(
+        controller: _pageController,
+        physics: const PageScrollPhysics(),
+        onPageChanged: (i) => trip.setTabIndex(i),
+        children: _screens,
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -259,7 +283,10 @@ class _MainShellState extends State<MainShell> {
         ),
         child: NavigationBar(
           selectedIndex: currentIndex,
-          onDestinationSelected: (i) => trip.setTabIndex(i),
+          onDestinationSelected: (i) {
+            trip.setTabIndex(i);
+            _pageController.jumpToPage(i);
+          },
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.home_outlined),

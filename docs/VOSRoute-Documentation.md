@@ -1,7 +1,7 @@
 # 📱 VOSRoute — Fleet Dispatch Mobile App Documentation
 
-> **Status**: Implemented & Active
-> **Date**: July 7, 2026
+> **Status**: Implemented & Active (Post-Restructure)
+> **Date**: July 9, 2026
 > **Scope**: Standalone Flutter mobile app (Android) for dispatched drivers, covering the full trip lifecycle from departure to proof of delivery and inbound return.
 > **Reference**: Asset & Maintenance Documentation format standard
 
@@ -930,3 +930,76 @@ Bottom navigation bar with 5 primary tabs:
 | 10 | Driver-to-dispatcher messaging | ❌ Future | Consider Firebase Realtime Database or in-app chat |
 | 11 | Multi-trip support | ❔ TBD | Can a driver have multiple `For Dispatch` trips simultaneously? |
 | 12 | Geofencing for auto-arrival | ❔ Future | Auto-detect when driver arrives at a stop or base |
+
+---
+
+## 22. Current Architecture State (Post-Restructure — July 9, 2026)
+
+### 22.1 Navigation
+
+Bottom navigation uses `PageView` with `PageController` for swipe gestures (replaced `IndexedStack`). Four tabs: Home / Plans / Stops / More. `NavigationBar.onDestinationSelected` calls `animateToPage`; `onPageChanged` syncs the tab index.
+
+### 22.2 Stops Screen
+
+Stops are a **flat list** of location-only cards (no customer grouping):
+- **Invoice stops** → open StopDetailScreen (map + navigation buttons only, no invoice info/photos/status)
+- **Other stops (ad-hoc, purchases)** → show inline status dialog
+- **Purchase stops** → open StopDetailScreen
+
+### 22.3 Invoice Flow
+
+Separated from stops. Accessed via **"Invoices" button** on the Dispatch Plans screen:
+
+1. **Photo Quest** (`QuestScreen`) — if any invoice has no photo, the driver must capture photos first (uses `post_dispatch_trip_photos` with `type: 'invoice'`, folder UUID `13954431-1352-421b-8bcd-d41963b3d9bd`)
+2. **InvoicesScreen** — grouped by customer with aggregate indicators (fulfilled/unfulfilled counts). Bottom bar has "Confirm Invoices" button which gates `markArrivedAtBase`.
+3. **InvoiceDetailScreen** — derived from `stop_detail_screen` without map. Shows customer info, invoice status, POD photo grid, "Add Photo", status update buttons (`Fulfilled`, `Not Fulfilled`, `Fulfilled with Returns`, `Fulfilled with Concerns`).
+
+### 22.4 Stop Detail Screen
+
+Rewritten as a **location-only** screen: full-screen MapLibre map + bottom nav bar (Google Maps / Waze / Other). No invoice info, no photos, no status updates.
+
+### 22.5 Photo Storage
+
+Photos are stored in `post_dispatch_trip_photos` (collection + `type: 'invoice'`). The `post_dispatch_nte` collection is **not used** by this app. Upload flow: 1) capture via `image_picker` → save local path, 2) `UploadService` uploads to Directus `POST /files` → get UUID, 3) `ActionQueueService` links UUID to `post_dispatch_trip_photos` with `{ post_dispatch_plan_id, file, type }`. The executor de-dupes by checking for existing `file` + parent id.
+
+### 22.6 Data Caching
+
+`TripProvider` caches analytics data:
+- `_cachedHistory` + `cachedHistory` getter + `fetchCachedHistory()`
+- `fetchAllCachedData()` fires all four fetches in parallel at app startup (active trip, pending plans, previous dispatch plans, history)
+- `BudgetScreen` no longer fetches in `initState` — reads from cached `allPlans`
+- `HistoryScreen` reads from `TripProvider.cachedHistory`
+
+### 22.7 Arrival Gate
+
+`markArrivedAtBase` is gated by `TripProvider._invoicesConfirmed` flag. Driver must tap "Confirm Invoices" on InvoicesScreen first. `confirmInvoices()` sets the flag; `resetInvoicesConfirmed()` clears it on next trip.
+
+### 22.8 Sync Log
+
+`SyncLogScreen` has a **"Clear Failed"** button with confirmation dialog (calls `ActionQueueService.clearFailed()` + `ActionQueueProvider.clearFailed()`).
+
+### 22.9 Light Mode Fix
+
+`Colors.black` / `AppColors.surface` replaced with `ColorScheme`-aware colors in `quest_screen.dart`, `stop_detail_screen.dart`, `invoice_detail_screen.dart` to prevent dark backgrounds in light mode.
+
+### 22.10 Dispatch Plan Seeding (SCM Web)
+
+15 pre-dispatch plans (`PDP-346` through `PDP-360`) seeded at branch 190 for driver 900002 with complete consolidation linkage for dispatch-creation testing. See `scm-vault/supply-chain/Dispatch Plan Seeding Blueprint.md`.
+
+---
+
+## 23. Key Files Map (Current)
+
+| Layer | Key files |
+|---|---|
+| Navigation | `lib/main.dart` — PageView, 4-tab NavigationBar |
+| Stops (flat) | `lib/screens/stops_list_screen.dart` |
+| Stop detail (map-only) | `lib/screens/stop_detail_screen.dart` |
+| Invoice list (grouped) | `lib/screens/invoices_screen.dart` |
+| Invoice detail | `lib/screens/invoice_detail_screen.dart` |
+| Photo quest | `lib/screens/quest_screen.dart` |
+| Photo linking | `lib/services/action_queue_service.dart` |
+| Arrival gate | `lib/providers/trip_provider.dart` — `_invoicesConfirmed` |
+| Sync log | `lib/screens/sync_log_screen.dart` — Clear Failed |
+| Data caching | `lib/providers/trip_provider.dart` — `fetchAllCachedData` |
+| App action button | `lib/core/app_action_button.dart` — invoice factory |

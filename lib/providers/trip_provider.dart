@@ -48,9 +48,35 @@ class TripProvider extends ChangeNotifier {
   List<OtherStop> _otherStops = [];
   List<PostDispatchPlan> _previousDispatchPlans = [];
   List<PostDispatchPlan> _pendingPlans = [];
+  List<PostDispatchPlan> _cachedHistory = [];
   bool _isLoading = false;
   String? _error;
   PhotoQuest? _currentQuest;
+  bool _invoicesConfirmed = false;
+
+  bool get invoicesConfirmed => _invoicesConfirmed;
+
+  void confirmInvoices() {
+    _invoicesConfirmed = true;
+    notifyListeners();
+  }
+
+  void resetInvoicesConfirmed() {
+    _invoicesConfirmed = false;
+    notifyListeners();
+  }
+
+  /// Captured POD photo paths, keyed by invoice stop id. Kept in memory so the
+  /// POD panel can show *all* photos for a stop across rebuilds/navigation.
+  final Map<int, List<String>> _podPhotosByStop = {};
+
+  List<String> getPodPhotos(int stopId) =>
+      List.unmodifiable(_podPhotosByStop[stopId] ?? const []);
+
+  void addPodPhoto(int stopId, String path) {
+    _podPhotosByStop.putIfAbsent(stopId, () => []).add(path);
+    notifyListeners();
+  }
 
   PostDispatchPlan? _selectedPlan;
   List<InvoiceStop> _selectedInvoiceStops = [];
@@ -454,6 +480,7 @@ class TripProvider extends ChangeNotifier {
   }
 
   Future<void> fetchActiveTrip({bool forceRefresh = false}) async {
+    _invoicesConfirmed = false;
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -737,6 +764,8 @@ class TripProvider extends ChangeNotifier {
     return list;
   }
 
+  List<PostDispatchPlan> get cachedHistory => List.unmodifiable(_cachedHistory);
+
   Future<void> fetchPendingPlans() async {
     try {
       final profile = await _auth.getProfile();
@@ -759,6 +788,12 @@ class TripProvider extends ChangeNotifier {
           .map((e) => PostDispatchPlan.fromJson(e as Map<String, dynamic>))
           .toList();
       notifyListeners();
+
+      // Proactively cache invoice statuses so the home performance chart
+      // includes these plans even if the driver never opens them.
+      await _cacheInvoiceStatusesForPlans(
+        _pendingPlans.map((p) => p.id).toList(),
+      );
     } catch (e) {
       debugPrint('[TripProvider] fetchPendingPlans failed: $e');
     }
@@ -818,8 +853,81 @@ class TripProvider extends ChangeNotifier {
           .map((e) => PostDispatchPlan.fromJson(e as Map<String, dynamic>))
           .toList();
       notifyListeners();
+
+      // Proactively cache invoice statuses so the home performance chart
+      // includes previous dispatch plans even if never opened.
+      await _cacheInvoiceStatusesForPlans(planIds);
+      notifyListeners();
     } catch (e) {
       debugPrint('[TripProvider] fetchPreviousDispatchPlans failed: $e');
+    }
+  }
+
+  Future<void> fetchCachedHistory() async {
+    try {
+      final profile = await _auth.getProfile();
+      if (profile == null) return;
+
+      final response = await _api.getDirectus(
+        '/items/post_dispatch_plan',
+        queryParams: {
+          'filter[driver_id][_eq]': profile.userId,
+          'filter[status][_in]': 'For Inbound,For Clearance,Posted',
+          'sort': '-date_encoded',
+          'limit': 20,
+        },
+      );
+      final data = response.data['data'] as List<dynamic>;
+      _cachedHistory = data
+          .map((e) => PostDispatchPlan.fromJson(e as Map<String, dynamic>))
+          .toList();
+      notifyListeners();
+    } catch (_) {
+      _cachedHistory = [];
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchAllCachedData() async {
+    await Future.wait([
+      fetchActiveTrip(),
+      fetchPendingPlans(),
+      fetchPreviousDispatchPlans(),
+      fetchCachedHistory(),
+    ]);
+  }
+
+  /// One batched Directus query that populates `_tripCache[planId]
+  /// ['invoice_stops']` with lightweight `{id, status}` entries for every
+  /// given plan. This lets `aggregatedInvoiceStatusCounts` include plans that
+  /// were fetched but never opened via `selectPlan()`.
+  Future<void> _cacheInvoiceStatusesForPlans(List<int> planIds) async {
+    if (planIds.isEmpty) return;
+    try {
+      final res = await _api.getDirectus(
+        '/items/post_dispatch_invoices',
+        queryParams: {
+          'filter[post_dispatch_plan_id][_in]': planIds.join(','),
+          'fields': 'id,status,post_dispatch_plan_id',
+        },
+      );
+      final list = res.data['data'] as List<dynamic>;
+      final byPlan = <int, List<Map<String, dynamic>>>{};
+      for (final inv in list) {
+        final pid = inv['post_dispatch_plan_id'] as int?;
+        if (pid == null) continue;
+        byPlan.putIfAbsent(pid, () => []).add({
+          'id': inv['id'],
+          'status': inv['status'] as String? ?? 'Pending',
+        });
+      }
+      for (final entry in byPlan.entries) {
+        final cached = _tripCache[entry.key] ?? <String, dynamic>{};
+        cached['invoice_stops'] = entry.value;
+        _tripCache[entry.key] = cached;
+      }
+    } catch (e) {
+      debugPrint('[TripProvider] _cacheInvoiceStatusesForPlans failed: $e');
     }
   }
 
@@ -1008,9 +1116,18 @@ class TripProvider extends ChangeNotifier {
       return;
     }
 
-    // Quest gate: all invoice photos/signatures/statuses must be complete
-    if (_currentQuest != null && !_currentQuest!.allComplete) {
+    // Confirm gate: driver must explicitly confirm invoices
+    if (!_invoicesConfirmed) {
+      _error = 'Please confirm invoices first before marking arrived.';
+      notifyListeners();
+      return;
+    }
+
+    // Quest gate: all invoice photos must be captured
+    if (_currentQuest != null &&
+        _currentQuest!.photosCaptured < _currentQuest!.totalCount) {
       final pending = _currentQuest!.pendingItems
+          .where((i) => !i.photoCaptured)
           .map((i) => i.invoiceNo)
           .join(', ');
       _error = 'Complete photo quest first. Pending: $pending';
@@ -1081,10 +1198,7 @@ class TripProvider extends ChangeNotifier {
     );
   }
 
-  void markQuestPhotoCaptured(
-    int invoiceStopId,
-    String localPath,
-  ) {
+  void markQuestPhotoCaptured(int invoiceStopId, String localPath) {
     if (_currentQuest == null) return;
     for (final item in _currentQuest!.items) {
       if (item.invoiceStopId == invoiceStopId) {
@@ -1173,6 +1287,10 @@ class TripProvider extends ChangeNotifier {
       notifyListeners();
     }
 
+    // Keep the Photo Quest in sync with the actual invoice status, regardless
+    // of whether the status was set from the stop detail or the quest screen.
+    markQuestStatusComplete(invoiceId, status);
+
     // 2. Enqueue action
     final profile = await _auth.getProfile();
     final driverUserId = profile?.userId;
@@ -1183,11 +1301,7 @@ class TripProvider extends ChangeNotifier {
     await _queue.enqueue(
       ActionEntry(
         actionType: ActionType.updateStopStatus,
-        payload: {
-          'status': status,
-          'invoiceAt': driverUserId,
-          'remarks': remarks,
-        },
+        payload: {'status': status, 'remarks': remarks},
         endpoint: '/items/post_dispatch_invoices/$invoiceId',
         httpMethod: 'PATCH',
         priority: ActionPriority.urgent,
@@ -1200,11 +1314,7 @@ class TripProvider extends ChangeNotifier {
     String status, {
     String? remarks,
   }) async {
-    const allowedStatuses = {
-      'Fulfilled',
-      'Not Fulfilled',
-      'Pending',
-    };
+    const allowedStatuses = {'Fulfilled', 'Not Fulfilled', 'Pending'};
     if (!allowedStatuses.contains(status)) {
       throw ArgumentError('Invalid stop status mapping: $status');
     }

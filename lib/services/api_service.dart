@@ -81,19 +81,19 @@ class ApiService {
 
   // --- Directus Methods ---
 
-  Future<Response> getDirectus(
+  Future<Response<T>> getDirectus<T>(
     String path, {
     Map<String, dynamic>? queryParams,
   }) async {
-    return await _directusDio.get(path, queryParameters: queryParams);
+    return await _directusDio.get<T>(path, queryParameters: queryParams);
   }
 
-  Future<Response> postDirectus(String path, {dynamic data}) async {
-    return await _directusDio.post(path, data: data);
+  Future<Response<T>> postDirectus<T>(String path, {dynamic data}) async {
+    return await _directusDio.post<T>(path, data: data);
   }
 
-  Future<Response> patchDirectus(String path, {dynamic data}) async {
-    return await _directusDio.patch(path, data: data);
+  Future<Response<T>> patchDirectus<T>(String path, {dynamic data}) async {
+    return await _directusDio.patch<T>(path, data: data);
   }
 
   Future<bool> pingDirectus() async {

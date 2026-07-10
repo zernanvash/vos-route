@@ -71,6 +71,7 @@ class BackgroundService {
 
   void stopTracking() {
     _activeTripId = null;
+    _service.invoke('setActiveTrip', {'tripId': null});
     _gpsTimer?.cancel();
     _gpsTimer = null;
     _updateNotification();
@@ -107,7 +108,9 @@ class BackgroundService {
   }
 
   Future<void> _captureAndQueueGps() async {
-    if (_activeTripId == null) return;
+    // Capture the trip ID this tick belongs to BEFORE the async gap.
+    final tripId = _activeTripId;
+    if (tripId == null) return;
 
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -117,8 +120,12 @@ class BackgroundService {
         ),
       );
 
+      // Guard against both null-out (stopTracking) and trip-switch
+      // (startTracking with a new trip) during the async gap above.
+      if (_activeTripId != tripId) return;
+
       final point = {
-        'post_dispatch_plan_id': _activeTripId!,
+        'trip_id': tripId,
         'latitude': position.latitude,
         'longitude': position.longitude,
         'accuracy': position.accuracy,

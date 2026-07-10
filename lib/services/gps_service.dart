@@ -46,6 +46,12 @@ class GpsService {
   }
 
   Future<void> _captureAndBuffer() async {
+    // Capture the trip ID this tick belongs to BEFORE the async gap so we
+    // don't attribute the point to whichever trip is active when the position
+    // resolves (which may be a different trip or null after stopTracking()).
+    final tripId = _activeTripId;
+    if (tripId == null) return;
+
     try {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(
@@ -54,8 +60,12 @@ class GpsService {
         ),
       );
 
+      // Guard against both null-out (stopTracking) and trip-switch
+      // (startTracking with a new trip) during the async gap above.
+      if (_activeTripId != tripId) return;
+
       _buffer.add({
-        'post_dispatch_plan_id': _activeTripId!,
+        'trip_id': tripId,
         'latitude': position.latitude,
         'longitude': position.longitude,
         'accuracy': position.accuracy,

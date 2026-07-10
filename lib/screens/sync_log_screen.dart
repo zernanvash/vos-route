@@ -48,6 +48,35 @@ class _SyncLogScreenState extends State<SyncLogScreen> {
               },
               child: const Text('Retry All'),
             ),
+          if (_actions.any((a) => a.status == ActionStatus.failed))
+            TextButton(
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Clear Failed'),
+                    content: const Text(
+                      'Remove all permanently failed items from the queue?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  await context.read<ActionQueueProvider>().clearFailed();
+                  await _load();
+                }
+              },
+              child: const Text('Clear Failed'),
+            ),
         ],
       ),
       body: _loading

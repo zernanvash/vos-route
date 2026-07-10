@@ -14,10 +14,12 @@ import '../theme/app_colors.dart';
 import '../core/app_card.dart';
 import '../core/app_action_button.dart';
 
-enum _QuestMode { list, capturing, preview, status, complete }
+enum _QuestMode { list, capturing, preview, complete }
 
 class QuestScreen extends StatefulWidget {
-  const QuestScreen({super.key});
+  final VoidCallback? onComplete;
+
+  const QuestScreen({super.key, this.onComplete});
 
   @override
   State<QuestScreen> createState() => _QuestScreenState();
@@ -36,9 +38,10 @@ class _QuestScreenState extends State<QuestScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: _buildAppBar(),
+      backgroundColor: cs.surface,
+      appBar: _buildAppBar(cs),
       body: Consumer<TripProvider>(
         builder: (context, trip, _) {
           final quest = trip.currentQuest;
@@ -56,8 +59,6 @@ class _QuestScreenState extends State<QuestScreen> {
               return _buildQuestList(quest);
             case _QuestMode.preview:
               return _buildPreview();
-            case _QuestMode.status:
-              return _buildStatusSection();
             case _QuestMode.complete:
               return _buildComplete();
             case _QuestMode.capturing:
@@ -68,21 +69,21 @@ class _QuestScreenState extends State<QuestScreen> {
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
+  PreferredSizeWidget _buildAppBar(ColorScheme cs) {
     final quest = _quest;
     return AppBar(
       title: Text(
-        _mode == _QuestMode.complete ? 'Quest Complete!' : 'Photo Quest',
-        style: const TextStyle(color: Colors.white),
+        'Invoice Photos',
+        style: TextStyle(color: cs.onSurface),
       ),
-      backgroundColor: AppColors.surface,
-      iconTheme: const IconThemeData(color: Colors.white),
+      backgroundColor: cs.surface,
+      iconTheme: IconThemeData(color: cs.onSurface),
       bottom: quest != null && _mode != _QuestMode.complete
           ? PreferredSize(
               preferredSize: const Size.fromHeight(4),
               child: LinearProgressIndicator(
                 value: quest.progress,
-                backgroundColor: AppColors.surfaceVariant,
+                backgroundColor: cs.surfaceContainerHighest,
                 valueColor: const AlwaysStoppedAnimation<Color>(
                   AppColors.success,
                 ),
@@ -144,31 +145,29 @@ class _QuestScreenState extends State<QuestScreen> {
     final IconData statusIcon;
     final String statusLabel;
 
-    if (item.isComplete) {
+    if (item.isComplete || item.photoCaptured) {
       statusColor = AppColors.success;
       statusIcon = Icons.check_circle;
       statusLabel = 'Complete';
-    } else if (item.photoCaptured) {
-      statusColor = Colors.orange;
-      statusIcon = Icons.edit;
-      statusLabel = 'Needs status';
     } else {
       statusColor = AppColors.textTertiary;
       statusIcon = Icons.pending;
       statusLabel = 'Pending';
     }
 
-    return AppCard(
-      padding: Insets.cardInner,
-      margin: const EdgeInsets.only(bottom: Insets.sm),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: item.isComplete
-                  ? AppColors.successDark
+    return GestureDetector(
+      onTap: () => _onItemTap(item),
+      child: AppCard(
+        padding: Insets.cardInner,
+        margin: const EdgeInsets.only(bottom: Insets.sm),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: item.isComplete
+                    ? AppColors.successDark
                   : AppColors.primaryDark,
               borderRadius: BorderRadius.circular(Insets.smallRadius),
             ),
@@ -190,18 +189,7 @@ class _QuestScreenState extends State<QuestScreen> {
                 Text(item.invoiceNo, style: AppTextStyle.subheading),
                 Text(item.customerName, style: AppTextStyle.caption),
                 Insets.gapXs,
-                Row(
-                  children: [
                     _questChip('📷', item.photoCaptured),
-                    Insets.gapWSm,
-                    _questChip(
-                      '✅',
-                      item.stopStatus != null &&
-                          item.stopStatus != 'Pending' &&
-                          item.stopStatus != 'En Route',
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -228,6 +216,7 @@ class _QuestScreenState extends State<QuestScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -338,58 +327,6 @@ class _QuestScreenState extends State<QuestScreen> {
     );
   }
 
-  Widget _buildStatusSection() {
-    if (_currentItem == null) {
-      return Center(
-        child: Text('No item', style: TextStyle(color: AppColors.textTertiary)),
-      );
-    }
-
-    const statuses = [
-      'Fulfilled',
-      'Not Fulfilled',
-      'Fulfilled with Returns',
-      'Fulfilled with Concerns',
-    ];
-
-    return Padding(
-      padding: Insets.cardLg,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Status for ${_currentItem!.invoiceNo}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Insets.gapXs,
-          Text(_currentItem!.customerName, style: AppTextStyle.caption),
-          Insets.gapLg,
-          ...statuses.map(
-            (s) => Padding(
-              padding: const EdgeInsets.only(bottom: Insets.sm),
-              child: SizedBox(
-                width: double.infinity,
-                height: Insets.buttonHeight,
-                child: OutlinedButton(
-                  onPressed: () => _acceptStatus(s),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(color: AppColors.border),
-                  ),
-                  child: Text(s),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildComplete() {
     return Center(
       child: Column(
@@ -398,7 +335,7 @@ class _QuestScreenState extends State<QuestScreen> {
           Icon(Icons.celebration, size: 80, color: AppColors.success),
           const SizedBox(height: Insets.xxl),
           const Text(
-            'All invoices complete!',
+            'All invoice photos captured!',
             style: TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -407,7 +344,7 @@ class _QuestScreenState extends State<QuestScreen> {
           ),
           const SizedBox(height: Insets.sm),
           Text(
-            'You can now mark arrived at base.',
+            'You can now update statuses from the invoice list.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
           ),
           const SizedBox(height: Insets.xxxl),
@@ -426,12 +363,24 @@ class _QuestScreenState extends State<QuestScreen> {
   void _startNextItem(PhotoQuest quest) {
     final next = quest.nextPending;
     if (next == null) {
-      setState(() => _mode = _QuestMode.complete);
+      // All items complete — fire onComplete if provided, else show complete screen
+      if (widget.onComplete != null) {
+        widget.onComplete!();
+      } else {
+        setState(() => _mode = _QuestMode.complete);
+      }
       return;
     }
 
     _currentItem = next;
     _capturedImage = null;
+
+    // If the item already has a photo, skip to next item
+    if (next.photoCaptured) {
+      _startNextItem(quest);
+      return;
+    }
+
     setState(() => _mode = _QuestMode.capturing);
     _capturePhoto();
   }
@@ -476,6 +425,16 @@ class _QuestScreenState extends State<QuestScreen> {
     return newPath;
   }
 
+  void _onItemTap(PhotoQuestItem item) {
+    if (item.isComplete) return;
+    _currentItem = item;
+    _capturedImage = null;
+    if (!item.photoCaptured) {
+      setState(() => _mode = _QuestMode.capturing);
+      _capturePhoto();
+    }
+  }
+
   Future<void> _acceptPhoto() async {
     if (_capturedImage == null || _currentItem == null) return;
 
@@ -487,13 +446,13 @@ class _QuestScreenState extends State<QuestScreen> {
 
       await _queue.enqueue(
         ActionEntry(
-          actionType: ActionType.linkPodPhoto,
+          actionType: ActionType.linkTripPhoto,
           payload: {
-            'post_dispatch_invoice_id': _currentItem!.invoiceStopId,
+            'trip_id': context.read<TripProvider>().activeTrip?.id,
             'local_file_path': persistentPath,
-            'doc_no': _currentItem!.invoiceNo,
+            'type': 'invoice',
           },
-          endpoint: '/items/post_dispatch_nte',
+          endpoint: '/items/post_dispatch_trip_photos',
           httpMethod: 'POST',
           priority: ActionPriority.normal,
         ),
@@ -504,10 +463,11 @@ class _QuestScreenState extends State<QuestScreen> {
           _currentItem!.invoiceStopId,
           persistentPath,
         );
-        setState(() {
-          _isUploading = false;
-          _mode = _QuestMode.status;
-        });
+        setState(() => _isUploading = false);
+        final quest = context.read<TripProvider>().currentQuest;
+        if (quest != null) {
+          _startNextItem(quest);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -516,22 +476,4 @@ class _QuestScreenState extends State<QuestScreen> {
     }
   }
 
-  void _acceptStatus(String status) {
-    if (_currentItem == null) return;
-
-    context.read<TripProvider>().markQuestStatusComplete(
-      _currentItem!.invoiceStopId,
-      status,
-    );
-
-    context.read<TripProvider>().updateStopStatus(
-      _currentItem!.invoiceStopId,
-      status,
-    );
-
-    final quest = context.read<TripProvider>().currentQuest;
-    if (quest != null) {
-      _startNextItem(quest);
-    }
-  }
 }

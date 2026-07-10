@@ -57,4 +57,9 @@ class ActionQueueProvider extends ChangeNotifier {
     await _queueService.clearCompleted();
     await _refreshStatus();
   }
+
+  Future<void> clearFailed() async {
+    await _queueService.clearFailed();
+    await _refreshStatus();
+  }
 }

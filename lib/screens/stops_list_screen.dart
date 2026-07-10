@@ -4,9 +4,7 @@ import '../providers/trip_provider.dart';
 import '../models/stop.dart';
 import '../widgets/stop_card.dart';
 import '../theme/app_spacing.dart';
-import '../theme/app_colors.dart';
 import '../core/app_card.dart';
-import '../core/app_status_badge.dart';
 import '../core/app_section_header.dart';
 
 class StopsListScreen extends StatelessWidget {
@@ -71,8 +69,7 @@ class StopsListScreen extends StatelessWidget {
             );
           }
 
-          final groups = trip.groupedStops;
-          final hasInvoiceStops = groups.isNotEmpty;
+          final hasInvoiceStops = trip.invoiceStops.isNotEmpty;
           final hasPurchaseStops = trip.purchaseStops.isNotEmpty;
           final hasOtherStops = trip.otherStops.isNotEmpty;
           final hasStops = hasInvoiceStops || hasPurchaseStops || hasOtherStops;
@@ -99,11 +96,22 @@ class StopsListScreen extends StatelessWidget {
                     ),
                     child: AppSectionHeader(title: 'Delivery Stops'),
                   ),
-                  ...groups.map(
-                    (group) => _CustomerGroupCard(group: group, trip: trip),
+                  ...trip.invoiceStops.map(
+                    (stop) => StopCard(
+                      stop: stop,
+                      sequence: stop.sequence,
+                      onTap: () {
+                        Navigator.pushNamed(
+                          context,
+                          '/stop-detail',
+                          arguments: stop,
+                        );
+                      },
+                    ),
                   ),
                 ],
                 if (hasPurchaseStops) ...[
+                  Insets.gapMd,
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: Insets.lg,
@@ -126,6 +134,7 @@ class StopsListScreen extends StatelessWidget {
                   ),
                 ],
                 if (hasOtherStops) ...[
+                  Insets.gapMd,
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: Insets.lg,
@@ -137,13 +146,7 @@ class StopsListScreen extends StatelessWidget {
                     (stop) => StopCard(
                       stop: stop,
                       sequence: stop.sequence,
-                      onTap: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/stop-detail',
-                          arguments: stop,
-                        );
-                      },
+                      onTap: () => _showOtherStopStatusDialog(context, stop),
                     ),
                   ),
                 ],
@@ -156,190 +159,48 @@ class StopsListScreen extends StatelessWidget {
   }
 }
 
-class _CustomerGroupCard extends StatelessWidget {
-  final StopGroup group;
-  final TripProvider trip;
-
-  const _CustomerGroupCard({required this.group, required this.trip});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final hasCoords = group.latitude != null && group.longitude != null;
-
-    return AppCard(
-      margin: const EdgeInsets.symmetric(
-        horizontal: Insets.md,
-        vertical: Insets.xs,
-      ),
-      padding: EdgeInsets.zero,
-      child: ExpansionTile(
-        initiallyExpanded: !group.allTerminal,
-        tilePadding: const EdgeInsets.symmetric(
-          horizontal: Insets.md,
-          vertical: Insets.xs,
-        ),
-        childrenPadding: const EdgeInsets.only(bottom: Insets.sm),
-        leading: CircleAvatar(
-          backgroundColor: group.allTerminal
-              ? (group.allFulfilled
-                    ? AppColors.success.withValues(alpha: 0.2)
-                    : AppColors.error.withValues(alpha: 0.2))
-              : cs.primary.withValues(alpha: 0.15),
-          radius: 18,
-          child: Text(
-            '${group.totalStops}',
-            style: TextStyle(
-              color: group.allTerminal
-                  ? (group.allFulfilled ? AppColors.success : AppColors.error)
-                  : cs.primary,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
+void _showOtherStopStatusDialog(BuildContext context, OtherStop stop) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(stop.remarks ?? 'Other Stop'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Update fulfillment status:'),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.read<TripProvider>().updateOtherStopStatus(
+                  stop.id,
+                  'Fulfilled',
+                );
+              },
+              child: const Text('Fulfilled'),
             ),
           ),
-        ),
-        title: Text(
-          group.customerName ?? group.customerCode,
-          style: TextStyle(
-            color: cs.onSurface,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        subtitle: hasCoords
-            ? Row(
-                children: [
-                  Icon(
-                    Icons.location_on_rounded,
-                    size: 11,
-                    color: AppColors.success,
-                  ),
-                  const SizedBox(width: 3),
-                  Text(
-                    'Location pinned',
-                    style: TextStyle(color: AppColors.success, fontSize: 11),
-                  ),
-                ],
-              )
-            : Text(
-                'No coordinates',
-                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
               ),
-        trailing: _AggregateIndicator(group: group),
-        children: group.stops.map((stop) {
-          return ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.only(left: 56, right: Insets.lg),
-            title: Text(
-              stop.invoiceNo ?? 'INV-#${stop.id}',
-              style: TextStyle(color: cs.onSurface, fontSize: 14),
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.read<TripProvider>().updateOtherStopStatus(
+                  stop.id,
+                  'Not Fulfilled',
+                );
+              },
+              child: const Text('Not Fulfilled'),
             ),
-            subtitle: stop.amount != null
-                ? Text(
-                    '₱${stop.amount!.toStringAsFixed(2)}',
-                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
-                  )
-                : null,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Flexible(child: AppStatusBadge(status: stop.status)),
-                const SizedBox(width: 10),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: cs.onSurfaceVariant,
-                ),
-              ],
-            ),
-            onTap: () {
-              Navigator.pushNamed(context, '/stop-detail', arguments: stop);
-            },
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-class _AggregateIndicator extends StatelessWidget {
-  final StopGroup group;
-
-  const _AggregateIndicator({required this.group});
-
-  @override
-  Widget build(BuildContext context) {
-    if (group.allFulfilled) {
-      return Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: Insets.xs,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.success.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(Insets.cardRadius),
-        ),
-        child: Icon(Icons.check_rounded, size: 14, color: AppColors.success),
-      );
-    }
-
-    if (group.allNotFulfilled) {
-      return Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: Insets.xs,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.error.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(Insets.cardRadius),
-        ),
-        child: Text(
-          '${group.notFulfilledCount}',
-          style: TextStyle(
-            color: AppColors.error,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
           ),
-        ),
-      );
-    }
-
-    if (group.hasMixed) {
-      return Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: Insets.xs,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.warning.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(Insets.cardRadius),
-        ),
-        child: Text(
-          '${group.totalStops - group.fulfilledCount}',
-          style: TextStyle(
-            color: AppColors.warning,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: Insets.xs),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(Insets.cardRadius),
+        ],
       ),
-      child: Text(
-        '${group.totalStops}',
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
+    ),
+  );
 }

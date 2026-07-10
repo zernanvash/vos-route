@@ -14,6 +14,7 @@ import '../core/app_progress_bar.dart';
 import '../core/app_gradient_header.dart';
 import '../core/app_section_header.dart';
 import 'quest_screen.dart';
+import 'invoices_screen.dart';
 
 class DispatchPlansScreen extends StatelessWidget {
   const DispatchPlansScreen({super.key});
@@ -109,7 +110,9 @@ class DispatchPlansScreen extends StatelessWidget {
         ),
       if (showArrival) Insets.gapMd,
       if (showArrival)
-        AppActionButton.quest(onPressed: () => _openQuest(context)),
+        AppActionButton.invoice(
+          onPressed: () => _openInvoices(context),
+        ),
       if (showArrival) Insets.gapSm,
       if (showArrival)
         AppActionButton.arrival(onPressed: () => _markArrived(context, t)),
@@ -279,7 +282,18 @@ class DispatchPlansScreen extends StatelessWidget {
             gps.startTracking(trip.activeTrip!.id);
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const _QuestWrapper()),
+              MaterialPageRoute(
+                builder: (_) => _QuestWrapper(
+                  onComplete: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const InvoicesScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
             );
           }
         });
@@ -303,22 +317,51 @@ class DispatchPlansScreen extends StatelessWidget {
     );
   }
 
-  void _openQuest(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const _QuestWrapper()),
-    );
+  void _openInvoices(BuildContext context) {
+    final trip = context.read<TripProvider>();
+    final quest = trip.currentQuest;
+
+    if (quest != null && quest.photosCaptured < quest.totalCount) {
+      AppDialog.showConfirm(
+        context,
+        title: 'Take Invoice Photos',
+        message:
+            'You need to capture photos for all invoices first. '
+            'Status updates can be done afterward from the invoice list.',
+        confirmLabel: 'Start Photos',
+        cancelLabel: 'Cancel',
+        onConfirm: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => _QuestWrapper(
+                onComplete: () {
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+          );
+        },
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const InvoicesScreen()),
+      );
+    }
   }
 }
 
 class _QuestWrapper extends StatelessWidget {
-  const _QuestWrapper();
+  final VoidCallback? onComplete;
+
+  const _QuestWrapper({this.onComplete});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
       value: context.read<TripProvider>(),
-      child: const QuestScreen(),
+      child: QuestScreen(onComplete: onComplete),
     );
   }
 }

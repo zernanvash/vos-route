@@ -153,7 +153,7 @@ class _TripPhotosScreenState extends State<TripPhotosScreen> {
         ActionEntry(
           actionType: ActionType.linkTripPhoto,
           payload: {
-            'post_dispatch_plan_id': trip.id,
+            'trip_id': trip.id,
             'local_file_path': persistentPath,
             'type': isOutbound ? 'outbound' : 'inbound',
           },

@@ -50,6 +50,7 @@ class BackgroundService {
         initialNotificationTitle: 'VOSRoute',
         initialNotificationContent: 'Monitoring pending sync',
         foregroundServiceNotificationId: 9999,
+        foregroundServiceTypes: [AndroidForegroundType.location],
       ),
       iosConfiguration: IosConfiguration(
         autoStart: false,

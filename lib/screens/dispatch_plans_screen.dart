@@ -110,9 +110,7 @@ class DispatchPlansScreen extends StatelessWidget {
         ),
       if (showArrival) Insets.gapMd,
       if (showArrival)
-        AppActionButton.invoice(
-          onPressed: () => _openInvoices(context),
-        ),
+        AppActionButton.invoice(onPressed: () => _openInvoices(context)),
       if (showArrival) Insets.gapSm,
       if (showArrival)
         AppActionButton.arrival(onPressed: () => _markArrived(context, t)),
@@ -287,9 +285,7 @@ class DispatchPlansScreen extends StatelessWidget {
                   onComplete: () {
                     Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const InvoicesScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const InvoicesScreen()),
                     );
                   },
                 ),

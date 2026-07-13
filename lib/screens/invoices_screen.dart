@@ -16,9 +16,7 @@ class InvoicesScreen extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: cs.surfaceContainerLowest,
-      appBar: AppBar(
-        title: const Text('Invoices'),
-      ),
+      appBar: AppBar(title: const Text('Invoices')),
       body: Consumer<TripProvider>(
         builder: (context, trip, _) {
           final groups = trip.groupedStops;
@@ -52,11 +50,13 @@ class InvoicesScreen extends StatelessWidget {
             );
           }
 
-          final totalInvoices =
-              groups.fold(0, (sum, g) => sum + g.totalStops);
-          final terminalInvoices =
-              groups.fold(0, (sum, g) => sum + g.terminalCount);
-          final allTerminal = terminalInvoices == totalInvoices && totalInvoices > 0;
+          final totalInvoices = groups.fold(0, (sum, g) => sum + g.totalStops);
+          final terminalInvoices = groups.fold(
+            0,
+            (sum, g) => sum + g.terminalCount,
+          );
+          final allTerminal =
+              terminalInvoices == totalInvoices && totalInvoices > 0;
 
           return RefreshIndicator(
             onRefresh: () => trip.fetchActiveTrip(forceRefresh: true),
@@ -64,7 +64,10 @@ class InvoicesScreen extends StatelessWidget {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
-                    Insets.lg, Insets.sm, Insets.lg, Insets.sm,
+                    Insets.lg,
+                    Insets.sm,
+                    Insets.lg,
+                    Insets.sm,
                   ),
                   child: Row(
                     children: [
@@ -90,9 +93,9 @@ class InvoicesScreen extends StatelessWidget {
                 Expanded(
                   child: ListView(
                     padding: const EdgeInsets.symmetric(vertical: Insets.sm),
-                    children: groups.map(
-                      (group) => _InvoiceGroupCard(group: group),
-                    ).toList(),
+                    children: groups
+                        .map((group) => _InvoiceGroupCard(group: group))
+                        .toList(),
                   ),
                 ),
                 _ConfirmBar(trip: trip, allTerminal: allTerminal),
@@ -177,10 +180,7 @@ class _InvoiceGroupCard extends StatelessWidget {
                         children: [
                           Text(
                             stop.invoiceNo ?? 'INV-#${stop.id}',
-                            style: TextStyle(
-                              color: cs.onSurface,
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: cs.onSurface, fontSize: 14),
                           ),
                           if (stop.amount != null)
                             Text(
@@ -352,7 +352,9 @@ class _ConfirmBar extends StatelessWidget {
                   trip.confirmInvoices();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Invoices confirmed. You can now mark arrived at base.'),
+                      content: Text(
+                        'Invoices confirmed. You can now mark arrived at base.',
+                      ),
                       backgroundColor: Colors.green,
                     ),
                   );

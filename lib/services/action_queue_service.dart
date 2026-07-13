@@ -2,15 +2,24 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
 import 'upload_service.dart';
-import '../db/database.dart';
+import '../db/app_database.dart';
+import '../db/daos/outbox_dao.dart';
 import '../models/action_entry.dart';
+import '../sync/request_builders/trip_transition_builder.dart';
+import '../sync/request_builders/gps_batch_builder.dart';
+import '../sync/request_builders/send_sos_builder.dart';
+import '../sync/request_builders/create_adhoc_stop_builder.dart';
+import '../sync/request_builders/upload_pod_builder.dart';
+import '../sync/request_builders/update_stop_status_builder.dart';
 
 class ActionQueueService {
   final ApiService _api = ApiService();
   final AppDatabase _db = AppDatabase();
+  final OutboxDao _dao = OutboxDao(AppDatabase());
   final Connectivity _connectivity = Connectivity();
   StreamSubscription? _connectivitySub;
   Timer? _processTimer;
@@ -36,19 +45,14 @@ class ActionQueueService {
   }
 
   Future<void> enqueue(ActionEntry entry) async {
-    final db = await _db.database;
-    await db.insert('action_queue', entry.toMap());
+    await _dao.insertAction(_entryToCompanion(entry));
     processQueue();
   }
 
   Future<void> enqueueBatch(List<ActionEntry> entries) async {
     if (entries.isEmpty) return;
-    final db = await _db.database;
-    final batch = db.batch();
-    for (final entry in entries) {
-      batch.insert('action_queue', entry.toMap());
-    }
-    await batch.commit(noResult: true);
+    final companions = entries.map(_entryToCompanion).toList();
+    await _dao.insertActions(companions);
     processQueue();
   }
 
@@ -61,150 +65,30 @@ class ActionQueueService {
     _isProcessing = true;
     try {
       await _processGpsBatches();
-      await _processPending(priority: 1);
-      await _processPending(priority: 2);
-      await _processPending(priority: 3);
+      await _processPendingNonGpsByPriority(1);
+      await _processPendingNonGpsByPriority(2);
+      await _processPendingNonGpsByPriority(3);
     } finally {
       _isProcessing = false;
     }
   }
 
-  Future<void> _processPending({required int priority}) async {
-    final db = await _db.database;
-    final pending = await db.query(
-      'action_queue',
-      where: 'status = ? AND batch_priority = ?',
-      whereArgs: ['pending', priority],
-      orderBy: 'created_at ASC',
-      limit: 20,
-    );
-
+  Future<void> _processPendingNonGpsByPriority(int priority) async {
+    final pending = await _dao.getPendingNonGpsByPriority(priority);
     for (final row in pending) {
-      final entry = ActionEntry.fromMap(row);
+      final entry = _outboxActionToEntry(row);
       await _execute(entry);
     }
   }
 
   Future<void> _execute(ActionEntry entry) async {
-    final db = await _db.database;
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc();
 
-    await db.update(
-      'action_queue',
-      {'status': 'in_flight', 'last_attempt': now},
-      where: 'id = ?',
-      whereArgs: [entry.id],
-    );
+    await _dao.updateStatus(entry.id!, status: 'in_flight', lastAttempt: now);
 
     try {
-      dynamic payload;
-      if (entry.payload is List) {
-        payload = List<dynamic>.from(entry.payload as List);
-      } else {
-        payload = Map<String, dynamic>.from(entry.payload as Map);
-      }
-
-      // Sanity-check: a stop-status payload must carry a non-null status.
-      // If null reaches here the call-site is broken; fail permanently so the
-      // error surfaces in the sync log instead of silently reaching the server.
-      if (payload is Map<String, dynamic> &&
-          (entry.actionType == ActionType.updateStopStatus ||
-              entry.actionType == ActionType.confirmDeparture ||
-              entry.actionType == ActionType.markArrived) &&
-          (!payload.containsKey('status') || payload['status'] == null)) {
-        throw ArgumentError(
-          'action_queue entry ${entry.id} (${entry.actionType}) has a null or missing status field. '
-          'This is a call-site bug — fix the payload builder, not this executor.',
-        );
-      }
-
-      if (payload is Map<String, dynamic> &&
-          payload.containsKey('local_file_path')) {
-        // Normalize old-format payloads that used post_dispatch_plan_id/file
-        // instead of trip_id/directus_uuid (pre-field-name-fix entries).
-        // TODO: remove once all pre-fix queue entries have been processed/cleared.
-        if (entry.actionType == ActionType.linkTripPhoto) {
-          if (payload.containsKey('post_dispatch_plan_id') &&
-              !payload.containsKey('trip_id')) {
-            payload['trip_id'] = payload['post_dispatch_plan_id'];
-            payload.remove('post_dispatch_plan_id');
-          }
-          if (payload.containsKey('file') &&
-              !payload.containsKey('directus_uuid')) {
-            payload['directus_uuid'] = payload['file'];
-            payload.remove('file');
-          }
-        }
-
-        final localFilePath = payload['local_file_path'] as String;
-        final uploadService = UploadService();
-        const tripPhotoFolder = '13954431-1352-421b-8bcd-d41963b3d9bd';
-        final directusFileId = await uploadService.uploadFile(
-          localFilePath,
-          folderUuid: tripPhotoFolder,
-        );
-        if (directusFileId == null) {
-          throw Exception('Failed to upload local file: $localFilePath');
-        }
-
-        payload.remove('local_file_path');
-        payload['directus_uuid'] = directusFileId;
-
-        await db.update(
-          'action_queue',
-          {'action_payload': jsonEncode(payload)},
-          where: 'id = ?',
-          whereArgs: [entry.id],
-        );
-      }
-
-      bool alreadyLinked = false;
-      if (payload is Map<String, dynamic> &&
-          payload['directus_uuid'] != null) {
-        if (entry.actionType == ActionType.linkPodPhoto ||
-            entry.actionType == ActionType.linkTripPhoto) {
-          final planId = payload['trip_id'];
-          final fileId = payload['directus_uuid'];
-          // Skip dedup if either value is null or empty — avoids Directus
-          // rejecting filter[_eq] with an empty string.
-          if (planId != null &&
-              fileId != null &&
-              '$planId'.isNotEmpty &&
-              '$fileId'.isNotEmpty) {
-            final res = await _api.getDirectus(
-              '/items/post_dispatch_trip_photos',
-              queryParams: {
-                'filter[trip_id][_eq]': planId,
-                'filter[directus_uuid][_eq]': fileId,
-              },
-            );
-            if ((res.data['data'] as List).isNotEmpty) {
-              alreadyLinked = true;
-            }
-          }
-        }
-      }
-
-      if (!alreadyLinked) {
-        switch (entry.httpMethod.toUpperCase()) {
-          case 'POST':
-            await _api.postDirectus(entry.endpoint, data: payload);
-            break;
-          case 'PATCH':
-            await _api.patchDirectus(entry.endpoint, data: payload);
-            break;
-          case 'PUT':
-            await _api.put(entry.endpoint, data: payload);
-            break;
-        }
-      }
-
-      await db.update(
-        'action_queue',
-        {'status': 'completed', 'last_attempt': now},
-        where: 'id = ?',
-        whereArgs: [entry.id],
-      );
+      await _executeAction(entry);
+      await _dao.markCompleted(entry.id!);
     } catch (e) {
       final newRetryCount = entry.retryCount + 1;
       final errorMsg = e is DioException
@@ -225,17 +109,7 @@ class ActionQueueService {
       }
 
       if (isPermanent || newRetryCount >= _maxRetries) {
-        await db.update(
-          'action_queue',
-          {
-            'status': 'failed',
-            'retry_count': newRetryCount,
-            'last_attempt': now,
-            'last_error': errorMsg,
-          },
-          where: 'id = ?',
-          whereArgs: [entry.id],
-        );
+        await _dao.markFailed(entry.id!, errorMsg, newRetryCount);
       } else {
         final backoffSeconds = [
           1,
@@ -245,129 +119,460 @@ class ActionQueueService {
           16,
           30,
         ].elementAt(newRetryCount.clamp(1, 6) - 1);
-        await db.update(
-          'action_queue',
-          {
-            'status': 'pending',
-            'retry_count': newRetryCount,
-            'last_attempt': now,
-            'last_error': errorMsg,
-          },
-          where: 'id = ?',
-          whereArgs: [entry.id],
-        );
-
+        await _dao.markRetry(entry.id!, errorMsg, newRetryCount);
         await Future.delayed(Duration(seconds: backoffSeconds));
       }
     }
   }
 
-  Future<void> _processGpsBatches() async {
-    final db = await _db.database;
-    final pendingGps = await db.query(
-      'action_queue',
-      where: "status = 'pending' AND action_type = 'gps_batch'",
-      orderBy: 'created_at ASC',
-      limit: 50,
+  Future<void> _executeAction(ActionEntry entry) async {
+    dynamic payload;
+    if (entry.payload is List) {
+      payload = List<dynamic>.from(entry.payload as List);
+    } else {
+      payload = Map<String, dynamic>.from(entry.payload as Map);
+    }
+
+    final actionType = entry.actionType.apiValue;
+
+    // Handle local file upload for photo linking actions
+    if (payload is Map<String, dynamic> &&
+        payload.containsKey('local_file_path')) {
+      await _uploadLocalFileIfNeeded(payload, actionType, entry.id!);
+    }
+
+    // Check for duplicate POD/trip photo links
+    if (payload is Map<String, dynamic> && payload['directus_uuid'] != null) {
+      if (actionType == 'link_pod_photo' || actionType == 'link_trip_photo') {
+        final isAlreadyLinked = await _checkAlreadyLinked(payload, actionType);
+        if (isAlreadyLinked) {
+          debugPrint(
+            '[ActionQueueService] Action ${entry.id} ($actionType) already linked, skipping',
+          );
+          return;
+        }
+      }
+    }
+
+    // Build and execute request using request builders
+    final request = _buildRequest(actionType, payload);
+    if (request == null) {
+      throw ArgumentError('Unknown action type: $actionType');
+    }
+
+    final path = request['path'] as String;
+    final method = request['method'] as String;
+    final body = request['body'];
+
+    switch (method) {
+      case 'POST':
+        if (body is List) {
+          await _api.postDirectus(path, data: body);
+        } else {
+          await _api.postDirectus(path, data: body);
+        }
+        break;
+      case 'PATCH':
+        await _api.patchDirectus(path, data: body);
+        break;
+      case 'PUT':
+        await _api.put(path, data: body);
+        break;
+      default:
+        throw ArgumentError('Unsupported HTTP method: $method');
+    }
+  }
+
+  Future<void> _uploadLocalFileIfNeeded(
+    Map<String, dynamic> payload,
+    String actionType,
+    int actionId,
+  ) async {
+    final localFilePath = payload['local_file_path'] as String;
+
+    String folderUuid;
+    if (actionType == 'link_pod_photo') {
+      folderUuid = 'd3940009-6b99-411b-8a7a-45b8c3a83c95'; // POD folder
+    } else {
+      folderUuid = '13954431-1352-421b-8bcd-d41963b3d9bd'; // Trip photo folder
+    }
+
+    final uploadService = UploadService();
+    final directusFileId = await uploadService.uploadFile(
+      localFilePath,
+      folderUuid: folderUuid,
     );
+
+    if (directusFileId == null) {
+      throw Exception('Failed to upload local file: $localFilePath');
+    }
+
+    payload.remove('local_file_path');
+    payload['directus_uuid'] = directusFileId;
+
+    // Update outbox with the new payload
+    await _db.customStatement(
+      'UPDATE outbox_actions SET args_json = ? WHERE id = ?',
+      [jsonEncode(payload), actionId],
+    );
+  }
+
+  Future<bool> _checkAlreadyLinked(
+    Map<String, dynamic> payload,
+    String actionType,
+  ) async {
+    final planId = payload['trip_id'] ?? payload['post_dispatch_plan_id'];
+    final fileId = payload['directus_uuid'];
+
+    if (planId == null ||
+        fileId == null ||
+        '$planId'.isEmpty ||
+        '$fileId'.isEmpty) {
+      return false;
+    }
+
+    final res = await _api.getDirectus(
+      '/items/post_dispatch_trip_photos',
+      queryParams: {
+        'filter[trip_id][_eq]': planId,
+        'filter[directus_uuid][_eq]': fileId,
+      },
+    );
+    return (res.data['data'] as List).isNotEmpty;
+  }
+
+  Map<String, dynamic>? _buildRequest(String actionType, dynamic payload) {
+    switch (actionType) {
+      case 'confirm_departure':
+        if (payload is Map<String, dynamic>) {
+          final planId = payload['plan_id'] ?? payload['trip_id'];
+          final dispatchTime =
+              DateTime.tryParse(payload['time_of_dispatch'] ?? '') ??
+              DateTime.now();
+          final remarks = payload['remarks'] as String?;
+          if (planId != null) {
+            return TripTransitionBuilder.buildConfirmDeparture(
+              planId: planId as int,
+              dispatchTime: dispatchTime,
+              remarks: remarks,
+            );
+          }
+        }
+        break;
+
+      case 'mark_arrived':
+        if (payload is Map<String, dynamic>) {
+          final planId = payload['plan_id'] ?? payload['trip_id'];
+          final arrivalTime =
+              DateTime.tryParse(payload['time_of_arrival'] ?? '') ??
+              DateTime.now();
+          final remarks = payload['remarks_arrival'] as String?;
+          if (planId != null) {
+            return TripTransitionBuilder.buildMarkArrived(
+              planId: planId as int,
+              arrivalTime: arrivalTime,
+              remarks: remarks,
+            );
+          }
+        }
+        break;
+
+      case 'update_stop_status':
+        if (payload is Map<String, dynamic>) {
+          final status = payload['status'];
+          final remarks = payload['remarks'];
+          if (status != null) {
+            // Invoice stop update (has invoice_id)
+            final invoiceId = payload['invoice_id'];
+            if (invoiceId != null) {
+              final driverUserId = payload['driver_user_id'] as int?;
+              return UpdateStopStatusBuilder.build(
+                invoiceId: invoiceId as int,
+                status: status as String,
+                remarks: remarks as String?,
+                driverUserId: driverUserId,
+              );
+            }
+            // Other stop update (has other_stop_id)
+            final otherStopId = payload['other_stop_id'];
+            if (otherStopId != null) {
+              return {
+                'path': '/items/post_dispatch_plan_others/$otherStopId',
+                'method': 'PATCH',
+                'body': {
+                  'status': status,
+                  if (remarks != null) 'remarks': remarks,
+                },
+              };
+            }
+          }
+        }
+        break;
+
+      case 'update_invoices_departure':
+        if (payload is Map<String, dynamic>) {
+          final invoiceIds =
+              (payload['invoice_ids'] as List?)?.cast<int>() ?? [];
+          final dispatchTime = payload['time_of_dispatch'];
+          if (invoiceIds.isNotEmpty && dispatchTime != null) {
+            return {
+              'path': '/items/sales_invoice',
+              'method': 'PATCH',
+              'body': {
+                'keys': invoiceIds,
+                'data': {
+                  'transaction_status': 'En Route',
+                  'isDispatched': 1,
+                  'dispatch_date': dispatchTime,
+                },
+              },
+            };
+          }
+        }
+        break;
+
+      case 'update_orders_departure':
+        if (payload is Map<String, dynamic>) {
+          final orderNos = (payload['order_nos'] as List?)?.cast<String>() ?? [];
+          if (orderNos.isNotEmpty) {
+            return {
+              'path': '/items/sales_order',
+              'method': 'PATCH',
+              'body': {
+                'query': {
+                  'filter': {
+                    'order_no': {'_in': orderNos},
+                  },
+                },
+                'data': {'order_status': 'En Route'},
+              },
+            };
+          }
+        }
+        break;
+
+      case 'link_pod_photo':
+        if (payload is Map<String, dynamic>) {
+          final invoiceId = payload['invoice_id'];
+          final directusFileId = payload['directus_uuid'];
+          final docNo = payload['doc_no'];
+          if (invoiceId != null && directusFileId != null && docNo != null) {
+            return UploadPodBuilder.build(
+              invoiceId: invoiceId as int,
+              directusFileUuid: directusFileId as String,
+              docNo: docNo as String,
+            );
+          }
+        }
+        break;
+
+      case 'link_trip_photo':
+        if (payload is Map<String, dynamic>) {
+          final tripId = payload['trip_id'] ?? payload['post_dispatch_plan_id'];
+          final directusFileId = payload['directus_uuid'];
+          final type = payload['type'] ?? 'outbound';
+          if (tripId != null && directusFileId != null) {
+            return {
+              'path': '/items/post_dispatch_trip_photos',
+              'method': 'POST',
+              'body': {
+                'trip_id': tripId as int,
+                'file': directusFileId as String,
+                'type': type as String,
+              },
+            };
+          }
+        }
+        break;
+
+      case 'submit_sos':
+        if (payload is Map<String, dynamic>) {
+          return SendSosBuilder.build(
+            reportNo: payload['report_no'] as String,
+            incidentType: payload['incident_type'] as String,
+            severity: payload['severity'] as String,
+            description: payload['description'] as String?,
+            latitude: payload['latitude'] as double?,
+            longitude: payload['longitude'] as double?,
+            locationName: payload['location_name'] as String?,
+            vehicleId: payload['vehicle_id'] as int?,
+            dispatchPlanId: payload['dispatch_plan_id'] as int?,
+            driverUserId: payload['driver_user_id'] as int?,
+            contactName: payload['contact_name'] as String?,
+            contactPhone: payload['contact_phone'] as String?,
+            status: payload['status'] as String?,
+            occurredAt:
+                DateTime.tryParse(payload['occurred_at'] ?? '') ??
+                DateTime.now(),
+          );
+        }
+        break;
+
+      case 'gps_batch':
+        if (payload is List) {
+          final points = GpsBatchBuilder.build(
+            payload.cast<Map<String, dynamic>>(),
+          );
+          final route = GpsBatchBuilder.buildRoute();
+          return {
+            'path': route['path'] as String,
+            'method': route['method'] as String,
+            'body': points,
+          };
+        }
+        break;
+
+      case 'add_ad_hoc_stop':
+        if (payload is Map<String, dynamic>) {
+          final planId = payload['plan_id'];
+          final remarks = payload['remarks'];
+          final distance = payload['distance'] as double?;
+          final sequence = payload['sequence'] as int?;
+          if (planId != null && remarks != null) {
+            return CreateAdhocStopBuilder.build(
+              planId: planId as int,
+              remarks: remarks as String,
+              distance: distance,
+              sequence: sequence,
+            );
+          }
+        }
+        break;
+    }
+    return null;
+  }
+
+  Future<void> _processGpsBatches() async {
+    final pendingGps = await _dao.getPendingGps();
     if (pendingGps.isEmpty) return;
 
     final allPoints = <Map<String, dynamic>>[];
     final ids = <int>[];
 
     for (final row in pendingGps) {
-      final entry = ActionEntry.fromMap(row);
-      final points = entry.payload as List<dynamic>;
-      allPoints.addAll(points.cast<Map<String, dynamic>>());
-      ids.add(entry.id!);
+      final entry = _outboxActionToEntry(row);
+      if (entry.payload is List) {
+        allPoints.addAll((entry.payload as List).cast<Map<String, dynamic>>());
+        ids.add(entry.id!);
+      }
     }
 
     if (allPoints.isEmpty || ids.isEmpty) return;
 
-    final now = DateTime.now().toIso8601String();
     try {
-      // Directus batch-create returns { "data": [...] } (List), not a single Map.
-      // postDirectus() returns the raw Dio Response — we deliberately do NOT cast
-      // response.data here, so List vs Map does not matter.
-      await _api.postDirectus('/items/post_dispatch_gps_logs', data: allPoints);
-
-      final batch = db.batch();
+      final points = GpsBatchBuilder.build(allPoints);
+      final route = GpsBatchBuilder.buildRoute();
+      await _api.postDirectus(route['path'] as String, data: points);
       for (final id in ids) {
-        batch.update(
-          'action_queue',
-          {'status': 'completed', 'last_attempt': now},
-          where: 'id = ?',
-          whereArgs: [id],
-        );
+        await _dao.markCompleted(id);
       }
-      await batch.commit(noResult: true);
     } catch (e) {
-      // Log the failure so it is visible in debug output, but do not rethrow —
-      // GPS batches are best-effort and should not block the rest of the queue.
       debugPrint('[ActionQueueService] GPS batch POST failed: $e');
+      for (final id in ids) {
+        final row = await _dao.selectOutboxActionById(id);
+        if (row != null) {
+          final entry = _outboxActionToEntry(row);
+          final newRetryCount = entry.retryCount + 1;
+          final errorMsg = e.toString();
+          if (newRetryCount >= _maxRetries) {
+            await _dao.markFailed(id, errorMsg, newRetryCount);
+          } else {
+            await _dao.markRetry(id, errorMsg, newRetryCount);
+          }
+        }
+      }
     }
   }
 
   Future<int> getPendingCount() async {
-    final db = await _db.database;
-    final result = await db.rawQuery(
-      "SELECT COUNT(*) as cnt FROM action_queue WHERE status = 'pending'",
-    );
-    return result.first['cnt'] as int? ?? 0;
+    return _dao.getPendingCount();
   }
 
   Future<int> getFailedCount() async {
-    final db = await _db.database;
-    final result = await db.rawQuery(
-      "SELECT COUNT(*) as cnt FROM action_queue WHERE status = 'failed'",
-    );
-    return result.first['cnt'] as int? ?? 0;
+    return _dao.getFailedCount();
   }
 
   Future<List<ActionEntry>> getPendingActions() async {
-    final db = await _db.database;
-    final rows = await db.query(
-      'action_queue',
-      where: "status = 'pending' OR status = 'failed'",
-      orderBy: 'batch_priority ASC, created_at ASC',
-      limit: 100,
+    final rows = await _dao.getPendingOrFailed();
+    return rows.map(_outboxActionToEntry).toList();
+  }
+
+  Future<bool> hasPendingStatusActionForPlan(int planId) async {
+    return _dao.hasPendingStatusActionForEntity(
+      entityType: 'trip',
+      entityId: planId,
     );
-    return rows.map((r) => ActionEntry.fromMap(r)).toList();
+  }
+
+  Future<bool> hasPendingStatusActionForInvoiceStop(int invoiceId) async {
+    return _dao.hasPendingStatusActionForEntity(
+      entityType: 'invoice_stop',
+      entityId: invoiceId,
+    );
   }
 
   Future<void> retryFailed() async {
-    final db = await _db.database;
-    await db.update('action_queue', {
-      'status': 'pending',
-      'retry_count': 0,
-      'last_error': null,
-    }, where: "status = 'failed'");
+    await _dao.retryAllFailed();
     processQueue();
   }
 
   Future<void> retryAction(int actionId) async {
-    final db = await _db.database;
-    await db.update(
-      'action_queue',
-      {'status': 'pending', 'retry_count': 0, 'last_error': null},
-      where: 'id = ?',
-      whereArgs: [actionId],
-    );
+    await _dao.retryAction(actionId);
     processQueue();
   }
 
   Future<void> clearCompleted() async {
-    final db = await _db.database;
-    await db.delete('action_queue', where: "status = 'completed'");
+    await _dao.clearCompleted();
   }
 
   Future<void> clearFailed() async {
-    final db = await _db.database;
-    await db.delete('action_queue', where: "status = 'failed'");
+    await _dao.clearFailed();
   }
 
   Future<void> clearAll() async {
-    final db = await _db.database;
-    await db.delete('action_queue');
+    await _dao.clearAll();
+  }
+
+  OutboxActionsCompanion _entryToCompanion(ActionEntry entry) {
+    return OutboxActionsCompanion(
+      action: Value(entry.actionType.apiValue),
+      priority: Value(entry.priority.value),
+      argsJson: Value(jsonEncode(entry.payload)),
+      schemaVersion: const Value(2),
+      status: Value(entry.status.apiValue),
+      retryCount: Value(entry.retryCount),
+      maxRetries: Value(entry.maxRetries),
+      createdAt: Value(entry.createdAt),
+      lastAttempt: entry.lastAttempt != null
+          ? Value(entry.lastAttempt!)
+          : const Value.absent(),
+      lastError: entry.lastError != null
+          ? Value(entry.lastError!)
+          : const Value.absent(),
+    );
+  }
+
+  ActionEntry _outboxActionToEntry(OutboxAction row) {
+    dynamic payload;
+    try {
+      payload = jsonDecode(row.argsJson);
+    } catch (_) {
+      payload = <String, dynamic>{};
+    }
+
+    return ActionEntry(
+      id: row.id,
+      actionType: ActionType.fromApiValue(row.action),
+      payload: payload,
+      endpoint: '', // Not used, derived from action type
+      httpMethod: '', // Not used, derived from action type
+      priority: ActionPriority.fromValue(row.priority),
+      status: ActionStatus.fromApiValue(row.status),
+      retryCount: row.retryCount,
+      maxRetries: row.maxRetries,
+      createdAt: row.createdAt,
+      lastAttempt: row.lastAttempt,
+      lastError: row.lastError,
+    );
   }
 }

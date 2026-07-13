@@ -1,16 +1,21 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'secure_storage_service.dart';
 import '../models/driver_profile.dart';
 
 class AuthService {
   final ApiService _api = ApiService();
+  final SecureStorageService _secure = SecureStorageService();
   static const String _profileKey = 'cached_profile';
   static const String _emailKey = 'login_email';
 
-  /// Returns `null` on success, or an error message string on failure.
+  Completer<String>? refreshInFlight;
+
   Future<String?> login(String email, String password) async {
     try {
       final response = await _api.post(
@@ -20,6 +25,8 @@ class AuthService {
       final token = response.data['token'] as String?;
       if (token != null && token.isNotEmpty) {
         await _api.setToken(token);
+        await _secure.writePasswordHash(password);
+        await _secure.writeLoginEmail(email);
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_emailKey, email);
         return null;
@@ -69,18 +76,18 @@ class AuthService {
       await prefs.setString(_profileKey, jsonEncode(profile.toJson()));
       return profile;
     } catch (e) {
-      print('[AuthService] getProfile failed: $e');
+      debugPrint('[AuthService] getProfile failed: $e');
       try {
         final prefs = await SharedPreferences.getInstance();
         final cached = prefs.getString(_profileKey);
         if (cached != null) {
-          print('[AuthService] using cached profile');
+          debugPrint('[AuthService] using cached profile');
           return DriverProfile.fromJson(
             jsonDecode(cached) as Map<String, dynamic>,
           );
         }
       } catch (e2) {
-        print('[AuthService] cache fallback also failed: $e2');
+        debugPrint('[AuthService] cache fallback also failed: $e2');
       }
       return null;
     }
@@ -88,8 +95,11 @@ class AuthService {
 
   Future<void> logout() async {
     await _api.clearToken();
+    await _secure.deletePasswordHash();
+    await _secure.deleteLoginEmail();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_profileKey);
+    await prefs.remove(_emailKey);
   }
 
   Future<bool> isLoggedIn() async {

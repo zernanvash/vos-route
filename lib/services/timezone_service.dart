@@ -23,7 +23,7 @@ class TimezoneService {
 
   Future<void> load() async {
     if (_loaded) return;
-    
+
     // 1. Initialize timezone database
     tz.initializeTimeZones();
 
@@ -31,12 +31,9 @@ class TimezoneService {
     try {
       final responseMap = await _api.getDirectusGeneric<Map<String, dynamic>>(
         '/items/general_setting',
-        queryParams: {
-          'filter[setting_key][_eq]': 'time_zone',
-          'limit': '1',
-        },
+        queryParams: {'filter[setting_key][_eq]': 'time_zone', 'limit': '1'},
       );
-      
+
       final dataList = responseMap['data'] as List<dynamic>;
       if (dataList.isNotEmpty) {
         final val = dataList.first['setting_value'] as String?;
@@ -46,16 +43,24 @@ class TimezoneService {
         }
       }
     } on NetworkException catch (e) {
-      debugPrint('[TimezoneService] Network exception fetching timezone: ${e.message}. Using cache.');
+      debugPrint(
+        '[TimezoneService] Network exception fetching timezone: ${e.message}. Using cache.',
+      );
       await _loadFromLocalCache();
     } on ServerException catch (e) {
-      debugPrint('[TimezoneService] Server exception fetching timezone (HTTP ${e.statusCode}): ${e.message}. Using cache.');
+      debugPrint(
+        '[TimezoneService] Server exception fetching timezone (HTTP ${e.statusCode}): ${e.message}. Using cache.',
+      );
       await _loadFromLocalCache();
     } on ClientException catch (e) {
-      debugPrint('[TimezoneService] Client exception fetching timezone (HTTP ${e.statusCode}): ${e.message}. Using cache.');
+      debugPrint(
+        '[TimezoneService] Client exception fetching timezone (HTTP ${e.statusCode}): ${e.message}. Using cache.',
+      );
       await _loadFromLocalCache();
     } catch (e) {
-      debugPrint('[TimezoneService] Unexpected exception fetching timezone: $e. Using cache.');
+      debugPrint(
+        '[TimezoneService] Unexpected exception fetching timezone: $e. Using cache.',
+      );
       await _loadFromLocalCache();
     }
     _loaded = true;
@@ -68,7 +73,9 @@ class TimezoneService {
         _cachedTimezone = localSetting.settingValue;
       }
     } catch (e) {
-      debugPrint('[TimezoneService] Failed to read from local settings cache: $e');
+      debugPrint(
+        '[TimezoneService] Failed to read from local settings cache: $e',
+      );
     }
   }
 

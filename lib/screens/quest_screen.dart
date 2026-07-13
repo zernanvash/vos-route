@@ -72,10 +72,7 @@ class _QuestScreenState extends State<QuestScreen> {
   PreferredSizeWidget _buildAppBar(ColorScheme cs) {
     final quest = _quest;
     return AppBar(
-      title: Text(
-        'Invoice Photos',
-        style: TextStyle(color: cs.onSurface),
-      ),
+      title: Text('Invoice Photos', style: TextStyle(color: cs.onSurface)),
       backgroundColor: cs.surface,
       iconTheme: IconThemeData(color: cs.onSurface),
       bottom: quest != null && _mode != _QuestMode.complete
@@ -168,55 +165,55 @@ class _QuestScreenState extends State<QuestScreen> {
               decoration: BoxDecoration(
                 color: item.isComplete
                     ? AppColors.successDark
-                  : AppColors.primaryDark,
-              borderRadius: BorderRadius.circular(Insets.smallRadius),
-            ),
-            child: Center(
-              child: Text(
-                '${index + 1}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                    : AppColors.primaryDark,
+                borderRadius: BorderRadius.circular(Insets.smallRadius),
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-          ),
-          Insets.gapWMd,
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.invoiceNo, style: AppTextStyle.subheading),
-                Text(item.customerName, style: AppTextStyle.caption),
-                Insets.gapXs,
-                    _questChip('📷', item.photoCaptured),
-              ],
+            Insets.gapWMd,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.invoiceNo, style: AppTextStyle.subheading),
+                  Text(item.customerName, style: AppTextStyle.caption),
+                  Insets.gapXs,
+                  _questChip('📷', item.photoCaptured),
+                ],
+              ),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: Insets.sm,
-              vertical: Insets.xs,
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Insets.sm,
+                vertical: Insets.xs,
+              ),
+              decoration: BoxDecoration(
+                color: statusColor.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(Insets.badgeRadius),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(statusIcon, size: 14, color: statusColor),
+                  const SizedBox(width: Insets.xs),
+                  Text(
+                    statusLabel,
+                    style: TextStyle(color: statusColor, fontSize: 10),
+                  ),
+                ],
+              ),
             ),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(Insets.badgeRadius),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(statusIcon, size: 14, color: statusColor),
-                const SizedBox(width: Insets.xs),
-                Text(
-                  statusLabel,
-                  style: TextStyle(color: statusColor, fontSize: 10),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -441,8 +438,9 @@ class _QuestScreenState extends State<QuestScreen> {
     setState(() => _isUploading = true);
 
     try {
-      final persistentPath =
-          await _saveToPersistentDirectory(_capturedImage!.path);
+      final persistentPath = await _saveToPersistentDirectory(
+        _capturedImage!.path,
+      );
 
       await _queue.enqueue(
         ActionEntry(
@@ -475,5 +473,4 @@ class _QuestScreenState extends State<QuestScreen> {
       }
     }
   }
-
 }

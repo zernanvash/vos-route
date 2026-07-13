@@ -32,7 +32,7 @@ dependencies:
   jwt_decoder: ^2.0.1
   timezone: ^0.10.1
   drift: ^2.14.1
-  sqlite3_flutter_libs: ^0.5.20
+  sqlcipher_flutter_libs: ^0.6.8
 
 dev_dependencies:
   flutter_test:

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import '../config/app_config.dart';
 import '../network/app_exception.dart';
+import '../network/auth_refresh_interceptor.dart';
+import '../network/exception_interceptor.dart';
 import 'secure_storage_service.dart';
 
 class ApiService {
@@ -43,7 +45,7 @@ class ApiService {
 
     final secure = SecureStorageService();
 
-    _dio.interceptors.add(
+    _dio.interceptors.addAll([
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           final token = await secure.readToken();
@@ -52,15 +54,16 @@ class ApiService {
           }
           handler.next(options);
         },
-        onError: (error, handler) async {
-          if (error.response?.statusCode == 401) {
-            await secure.deleteToken();
-            _unauthorizedController.add(401);
-          }
-          handler.next(error);
+      ),
+      AuthRefreshInterceptor(
+        onUnauthorized: () {
+          _unauthorizedController.add(401);
         },
       ),
-    );
+      ExceptionInterceptor(),
+    ]);
+
+    _directusDio.interceptors.add(ExceptionInterceptor());
   }
 
   Future<Response> get(String path, {Map<String, dynamic>? queryParams}) async {
@@ -119,58 +122,19 @@ class ApiService {
     await SecureStorageService().deleteToken();
   }
 
-  // Generic typed wrapper for Directus GET requests
   Future<T> getDirectusGeneric<T>(
     String path, {
     Map<String, dynamic>? queryParams,
   }) async {
     try {
-      final response = await _directusDio.get(path, queryParameters: queryParams);
+      final response = await _directusDio.get(
+        path,
+        queryParameters: queryParams,
+      );
       return response.data as T;
     } on DioException catch (e) {
-      throw _mapDioError(e);
-    }
-  }
-
-  AppException _mapDioError(DioException err) {
-    final statusCode = err.response?.statusCode;
-    final responseData = err.response?.data;
-
-    if (err.type == DioExceptionType.connectionTimeout ||
-        err.type == DioExceptionType.sendTimeout ||
-        err.type == DioExceptionType.receiveTimeout ||
-        err.type == DioExceptionType.connectionError) {
-      return const NetworkException('Network timeout or connection error. Please retry.');
-    } else if (statusCode != null) {
-      if (statusCode == 401) {
-        return const AuthException('Session expired. Please log in again.');
-      } else if (statusCode == 400 || statusCode == 422) {
-        Map<String, dynamic> errors = {};
-        if (responseData is Map<String, dynamic> && responseData.containsKey('errors')) {
-          errors = responseData;
-        }
-        return ValidationException(
-          responseData?['errors']?[0]?['message'] ?? 'Validation failed.',
-          errors,
-        );
-      } else if (statusCode >= 400 && statusCode < 500) {
-        Map<String, dynamic>? body;
-        if (responseData is Map<String, dynamic>) {
-          body = responseData;
-        }
-        return ClientException(
-          responseData?['errors']?[0]?['message'] ?? 'Client error occurred.',
-          statusCode,
-          body: body,
-        );
-      } else {
-        return ServerException(
-          'Server error occurred (HTTP $statusCode). Please retry.',
-          statusCode,
-        );
-      }
-    } else {
-      return NetworkException('An unexpected network error occurred: ${err.message}');
+      if (e.error is AppException) throw e.error as AppException;
+      rethrow;
     }
   }
 }

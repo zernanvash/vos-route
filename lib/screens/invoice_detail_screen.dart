@@ -227,10 +227,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       );
 
       if (mounted) {
-        context.read<TripProvider>().addPodPhoto(
-          s.id,
-          persistentPath,
-        );
+        context.read<TripProvider>().addPodPhoto(s.id, persistentPath);
       }
     } catch (e) {
       if (mounted) {

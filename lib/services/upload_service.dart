@@ -34,7 +34,9 @@ class UploadService {
       debugPrint('[UploadService] uploadFile failed for path: $filePath');
       debugPrint('[UploadService] Error: $e');
       if (e is DioException) {
-        debugPrint('[UploadService] Dio Status Code: ${e.response?.statusCode}');
+        debugPrint(
+          '[UploadService] Dio Status Code: ${e.response?.statusCode}',
+        );
         debugPrint('[UploadService] Dio Response Body: ${e.response?.data}');
       }
       debugPrint(stack.toString());

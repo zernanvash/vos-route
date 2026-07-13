@@ -3,14 +3,14 @@ import '../models/trip.dart';
 import '../models/stop.dart';
 import '../models/action_entry.dart';
 import '../models/photo_quest.dart';
-import '../services/api_service.dart';
+import '../repositories/trip_repository.dart';
 import '../services/auth_service.dart';
 import '../services/action_queue_service.dart';
 import '../services/notification_service.dart';
 import '../services/timezone_service.dart';
 
 class TripProvider extends ChangeNotifier {
-  final ApiService _api = ApiService();
+  final TripRepository _tripRepository = TripRepository();
   final AuthService _auth = AuthService();
   final ActionQueueService _queue = ActionQueueService();
 
@@ -137,34 +137,11 @@ class TripProvider extends ChangeNotifier {
 
     try {
       final planId = plan.id;
-      final staffRes = await _api.getDirectus(
-        '/items/post_dispatch_plan_staff',
-        queryParams: {
-          'filter[post_dispatch_plan_id][_eq]': planId,
-          'fields': '*,user_id.*',
-        },
-      );
-      final budgetRes = await _api.getDirectus(
-        '/items/post_dispatch_budgeting',
-        queryParams: {'filter[post_dispatch_plan_id][_eq]': planId},
-      );
-      final invoicesRes = await _api.getDirectus(
-        '/items/post_dispatch_invoices',
-        queryParams: {
-          'filter[post_dispatch_plan_id][_eq]': planId,
-          'fields': '*,invoice_id.*',
-        },
-      );
-      final purchasesRes = await _api.getDirectus(
-        '/items/post_dispatch_purchases',
-        queryParams: {'filter[post_dispatch_plan_id][_eq]': planId},
-      );
-      final othersRes = await _api.getDirectus(
-        '/items/post_dispatch_plan_others',
-        queryParams: {'filter[post_dispatch_plan_id][_eq]': planId},
-      );
-
-      final staffList = staffRes.data['data'] as List<dynamic>;
+      final staffList = await _tripRepository.fetchPlanStaff(planId);
+      final budgetList = await _tripRepository.fetchPlanBudget(planId);
+      final invoicesList = await _tripRepository.fetchPlanInvoices(planId);
+      final purchasesList = await _tripRepository.fetchPlanPurchases(planId);
+      final othersList = await _tripRepository.fetchPlanOtherStops(planId);
       final parsedCrew = staffList.map((s) {
         final user = s['user_id'];
         String name = 'Crew Helper';
@@ -190,7 +167,6 @@ class TripProvider extends ChangeNotifier {
         return CrewMember(userId: uId, name: name, role: s['role'] ?? 'helper');
       }).toList();
 
-      final budgetList = budgetRes.data['data'] as List<dynamic>;
       final parsedBudget = budgetList
           .map(
             (b) => BudgetLine(
@@ -222,8 +198,6 @@ class TripProvider extends ChangeNotifier {
         budget: parsedBudget,
       );
 
-      final invoicesList = invoicesRes.data['data'] as List<dynamic>;
-
       final customerCodes = invoicesList
           .map(
             (inv) => inv['invoice_id'] is Map<String, dynamic>
@@ -238,15 +212,9 @@ class TripProvider extends ChangeNotifier {
       final Map<String, Map<String, dynamic>> customerMap = {};
       if (customerCodes.isNotEmpty) {
         try {
-          final customersRes = await _api.getDirectus(
-            '/items/customer',
-            queryParams: {
-              'filter[customer_code][_in]': customerCodes.join(','),
-              'fields':
-                  'customer_code,customer_name,latitude,longitude,location',
-            },
+          final customersDataList = await _tripRepository.fetchCustomers(
+            customerCodes,
           );
-          final customersDataList = customersRes.data['data'] as List<dynamic>;
           for (var cust in customersDataList) {
             if (cust is Map<String, dynamic>) {
               final code = cust['customer_code']?.toString();
@@ -260,53 +228,84 @@ class TripProvider extends ChangeNotifier {
         }
       }
 
-      _selectedInvoiceStops = invoicesList.map((inv) {
-        final isInvoiceMap = inv['invoice_id'] is Map<String, dynamic>;
-        final invoiceNo = isInvoiceMap ? inv['invoice_id']['invoice_no'] : null;
-        final customerCode = isInvoiceMap
-            ? inv['invoice_id']['customer_code']?.toString()
-            : null;
-        final totalAmount = isInvoiceMap
-            ? (inv['invoice_id']['total_amount'] as num?)?.toDouble()
-            : null;
-        final netAmount = isInvoiceMap
-            ? (inv['invoice_id']['net_amount'] as num?)?.toDouble()
-            : null;
+      _selectedInvoiceStops = await Future.wait(
+        invoicesList.map((inv) async {
+          final isInvoiceMap = inv['invoice_id'] is Map<String, dynamic>;
+          final invoiceNo = isInvoiceMap
+              ? inv['invoice_id']['invoice_no']
+              : null;
+          final customerCode = isInvoiceMap
+              ? inv['invoice_id']['customer_code']?.toString()
+              : null;
+          final totalAmount = isInvoiceMap
+              ? (inv['invoice_id']['total_amount'] as num?)?.toDouble()
+              : null;
+          final netAmount = isInvoiceMap
+              ? (inv['invoice_id']['net_amount'] as num?)?.toDouble()
+              : null;
 
-        final customerData = customerCode != null
-            ? customerMap[customerCode]
-            : null;
-        final customerName =
-            customerData?['customer_name']?.toString() ?? customerCode;
+          final customerData = customerCode != null
+              ? customerMap[customerCode]
+              : null;
+          final customerName =
+              customerData?['customer_name']?.toString() ?? customerCode;
 
-        return InvoiceStop(
-          id: inv['id'] as int,
-          postDispatchPlanId: inv['post_dispatch_plan_id'] as int? ?? 0,
-          invoiceId: isInvoiceMap
-              ? (inv['invoice_id']['invoice_id'] as int? ?? 0)
-              : (inv['invoice_id'] as int? ?? 0),
-          invoiceNo: invoiceNo ?? 'INV-#${inv['invoice_id']}',
-          customerCode: customerCode,
-          customerName: customerName,
-          amount: netAmount ?? totalAmount ?? 0.0,
-          address: isInvoiceMap
-              ? (inv['invoice_id']['shipping_address'] as String? ??
-                    'No Address')
-              : 'No Address',
-          latitude: _coordinateFromCustomer(customerData, 'latitude'),
-          longitude: _coordinateFromCustomer(
-            customerData,
-            'longitude',
-            isLatitude: false,
-          ),
-          distance: (inv['distance'] as num?)?.toDouble() ?? 0.0,
-          status: inv['status'] as String? ?? 'Pending',
-          sequence: inv['sequence'] as int? ?? 0,
-          remarks: inv['remarks'] as String?,
-        );
-      }).toList();
+          final invoiceId = inv['id'] as int;
+          final hasPendingStopAction = await _queue
+              .hasPendingStatusActionForInvoiceStop(invoiceId);
+          final serverStatus = inv['status'] as String? ?? 'Pending';
+          final localStatus = hasPendingStopAction
+              ? _selectedInvoiceStops
+                    .firstWhere(
+                      (s) => s.id == invoiceId,
+                      orElse: () => InvoiceStop(
+                        id: invoiceId,
+                        postDispatchPlanId: 0,
+                        invoiceId: 0,
+                        invoiceNo: '',
+                        customerCode: null,
+                        customerName: null,
+                        amount: 0,
+                        address: '',
+                        latitude: null,
+                        longitude: null,
+                        distance: 0,
+                        status: serverStatus,
+                        sequence: 0,
+                        remarks: null,
+                      ),
+                    )
+                    .status
+              : serverStatus;
 
-      final purchasesList = purchasesRes.data['data'] as List<dynamic>;
+          return InvoiceStop(
+            id: invoiceId,
+            postDispatchPlanId: inv['post_dispatch_plan_id'] as int? ?? 0,
+            invoiceId: isInvoiceMap
+                ? (inv['invoice_id']['invoice_id'] as int? ?? 0)
+                : (inv['invoice_id'] as int? ?? 0),
+            invoiceNo: invoiceNo ?? 'INV-#${inv['invoice_id']}',
+            customerCode: customerCode,
+            customerName: customerName,
+            amount: netAmount ?? totalAmount ?? 0.0,
+            address: isInvoiceMap
+                ? (inv['invoice_id']['shipping_address'] as String? ??
+                      'No Address')
+                : 'No Address',
+            latitude: _coordinateFromCustomer(customerData, 'latitude'),
+            longitude: _coordinateFromCustomer(
+              customerData,
+              'longitude',
+              isLatitude: false,
+            ),
+            distance: (inv['distance'] as num?)?.toDouble() ?? 0.0,
+            status: localStatus,
+            sequence: inv['sequence'] as int? ?? 0,
+            remarks: inv['remarks'] as String?,
+          );
+        }),
+      );
+
       _selectedPurchaseStops = purchasesList
           .map(
             (p) => PurchaseStop(
@@ -322,7 +321,6 @@ class TripProvider extends ChangeNotifier {
           )
           .toList();
 
-      final othersList = othersRes.data['data'] as List<dynamic>;
       _selectedOtherStops = othersList
           .map(
             (o) => OtherStop(
@@ -492,18 +490,11 @@ class TripProvider extends ChangeNotifier {
         '[TripProvider] fetching trips for driver_id=${profile.userId}',
       );
 
-      final response = await _api.getDirectus(
-        '/items/post_dispatch_plan',
-        queryParams: {
-          'filter[driver_id][_eq]': profile.userId,
-          'filter[status][_in]': 'For Dispatch,For Inbound',
-          'sort': '-id',
-          'limit': '1',
-          'fields': '*,vehicle_id.*',
-        },
+      final dataList = await _tripRepository.fetchPlanList(
+        driverId: profile.userId,
+        statusIn: 'For Dispatch,For Inbound',
+        limit: 1,
       );
-
-      final dataList = response.data['data'] as List<dynamic>;
       if (dataList.isEmpty) {
         _activeTrip = null;
         _invoiceStops = [];
@@ -514,34 +505,11 @@ class TripProvider extends ChangeNotifier {
         final planJson = dataList.first as Map<String, dynamic>;
         final planId = planJson['id'] as int;
 
-        final staffRes = await _api.getDirectus(
-          '/items/post_dispatch_plan_staff',
-          queryParams: {
-            'filter[post_dispatch_plan_id][_eq]': planId,
-            'fields': '*,user_id.*',
-          },
-        );
-        final budgetRes = await _api.getDirectus(
-          '/items/post_dispatch_budgeting',
-          queryParams: {'filter[post_dispatch_plan_id][_eq]': planId},
-        );
-        final invoicesRes = await _api.getDirectus(
-          '/items/post_dispatch_invoices',
-          queryParams: {
-            'filter[post_dispatch_plan_id][_eq]': planId,
-            'fields': '*,invoice_id.*',
-          },
-        );
-        final purchasesRes = await _api.getDirectus(
-          '/items/post_dispatch_purchases',
-          queryParams: {'filter[post_dispatch_plan_id][_eq]': planId},
-        );
-        final othersRes = await _api.getDirectus(
-          '/items/post_dispatch_plan_others',
-          queryParams: {'filter[post_dispatch_plan_id][_eq]': planId},
-        );
+        // Check if there's a pending status action for this trip - if so, don't overwrite local status
+        final hasPendingStatusAction = await _queue
+            .hasPendingStatusActionForPlan(planId);
 
-        final staffList = staffRes.data['data'] as List<dynamic>;
+        final staffList = await _tripRepository.fetchPlanStaff(planId);
         planJson['crew'] = staffList.map((s) {
           final user = s['user_id'];
           String name = 'Crew Helper';
@@ -568,7 +536,7 @@ class TripProvider extends ChangeNotifier {
           };
         }).toList();
 
-        final budgetList = budgetRes.data['data'] as List<dynamic>;
+        final budgetList = await _tripRepository.fetchPlanBudget(planId);
         planJson['budget'] = budgetList
             .map(
               (b) => {
@@ -580,9 +548,35 @@ class TripProvider extends ChangeNotifier {
             )
             .toList();
 
-        _activeTrip = PostDispatchPlan.fromJson(planJson);
+        final serverTrip = PostDispatchPlan.fromJson(planJson);
+        if (hasPendingStatusAction) {
+          // Preserve local optimistic status (e.g., "For Inbound") while pending action is unsynced
+          _activeTrip = PostDispatchPlan(
+            id: serverTrip.id,
+            docNo: serverTrip.docNo,
+            driverId: serverTrip.driverId,
+            vehicleId: serverTrip.vehicleId,
+            status: _activeTrip!.status,
+            startingPoint: serverTrip.startingPoint,
+            totalDistance: serverTrip.totalDistance,
+            amount: serverTrip.amount,
+            estimatedTimeOfDispatch: serverTrip.estimatedTimeOfDispatch,
+            estimatedTimeOfArrival: serverTrip.estimatedTimeOfArrival,
+            timeOfDispatch: _activeTrip!.timeOfDispatch,
+            timeOfArrival: serverTrip.timeOfArrival,
+            dateEncoded: serverTrip.dateEncoded,
+            remarks: _activeTrip!.remarks,
+            vehicle: serverTrip.vehicle,
+            crew: serverTrip.crew,
+            budget: serverTrip.budget,
+          );
+        } else {
+          _activeTrip = serverTrip;
+        }
 
-        final invoicesList = invoicesRes.data['data'] as List<dynamic>;
+        final invoicesList = await _tripRepository.fetchPlanInvoices(planId);
+        final purchasesList = await _tripRepository.fetchPlanPurchases(planId);
+        final othersList = await _tripRepository.fetchPlanOtherStops(planId);
 
         final customerCodes = invoicesList
             .map(
@@ -598,16 +592,9 @@ class TripProvider extends ChangeNotifier {
         final Map<String, Map<String, dynamic>> customerMap = {};
         if (customerCodes.isNotEmpty) {
           try {
-            final customersRes = await _api.getDirectus(
-              '/items/customer',
-              queryParams: {
-                'filter[customer_code][_in]': customerCodes.join(','),
-                'fields':
-                    'customer_code,customer_name,latitude,longitude,location',
-              },
+            final customersDataList = await _tripRepository.fetchCustomers(
+              customerCodes,
             );
-            final customersDataList =
-                customersRes.data['data'] as List<dynamic>;
             for (var cust in customersDataList) {
               if (cust is Map<String, dynamic>) {
                 final code = cust['customer_code']?.toString();
@@ -623,55 +610,84 @@ class TripProvider extends ChangeNotifier {
           }
         }
 
-        _invoiceStops = invoicesList.map((inv) {
-          final isInvoiceMap = inv['invoice_id'] is Map<String, dynamic>;
-          final invoiceNo = isInvoiceMap
-              ? inv['invoice_id']['invoice_no']
-              : null;
-          final customerCode = isInvoiceMap
-              ? inv['invoice_id']['customer_code']?.toString()
-              : null;
-          final totalAmount = isInvoiceMap
-              ? (inv['invoice_id']['total_amount'] as num?)?.toDouble()
-              : null;
-          final netAmount = isInvoiceMap
-              ? (inv['invoice_id']['net_amount'] as num?)?.toDouble()
-              : null;
+        _invoiceStops = await Future.wait(
+          invoicesList.map((inv) async {
+            final isInvoiceMap = inv['invoice_id'] is Map<String, dynamic>;
+            final invoiceNo = isInvoiceMap
+                ? inv['invoice_id']['invoice_no']
+                : null;
+            final customerCode = isInvoiceMap
+                ? inv['invoice_id']['customer_code']?.toString()
+                : null;
+            final totalAmount = isInvoiceMap
+                ? (inv['invoice_id']['total_amount'] as num?)?.toDouble()
+                : null;
+            final netAmount = isInvoiceMap
+                ? (inv['invoice_id']['net_amount'] as num?)?.toDouble()
+                : null;
 
-          final customerData = customerCode != null
-              ? customerMap[customerCode]
-              : null;
-          final customerName =
-              customerData?['customer_name']?.toString() ?? customerCode;
+            final customerData = customerCode != null
+                ? customerMap[customerCode]
+                : null;
+            final customerName =
+                customerData?['customer_name']?.toString() ?? customerCode;
 
-          return InvoiceStop(
-            id: inv['id'] as int,
-            postDispatchPlanId: inv['post_dispatch_plan_id'] as int? ?? 0,
-            invoiceId: isInvoiceMap
-                ? (inv['invoice_id']['invoice_id'] as int? ?? 0)
-                : (inv['invoice_id'] as int? ?? 0),
-            invoiceNo: invoiceNo ?? 'INV-#${inv['invoice_id']}',
-            customerCode: customerCode,
-            customerName: customerName,
-            amount: netAmount ?? totalAmount ?? 0.0,
-            address: isInvoiceMap
-                ? (inv['invoice_id']['shipping_address'] as String? ??
-                      'No Address')
-                : 'No Address',
-            latitude: _coordinateFromCustomer(customerData, 'latitude'),
-            longitude: _coordinateFromCustomer(
-              customerData,
-              'longitude',
-              isLatitude: false,
-            ),
-            distance: (inv['distance'] as num?)?.toDouble() ?? 0.0,
-            status: inv['status'] as String? ?? 'Pending',
-            sequence: inv['sequence'] as int? ?? 0,
-            remarks: inv['remarks'] as String?,
-          );
-        }).toList();
+            final invoiceId = inv['id'] as int;
+            final hasPendingStopAction = await _queue
+                .hasPendingStatusActionForInvoiceStop(invoiceId);
+            final serverStatus = inv['status'] as String? ?? 'Pending';
+            final localStatus = hasPendingStopAction
+                ? _invoiceStops
+                      .firstWhere(
+                        (s) => s.id == invoiceId,
+                        orElse: () => InvoiceStop(
+                          id: invoiceId,
+                          postDispatchPlanId: 0,
+                          invoiceId: 0,
+                          invoiceNo: '',
+                          customerCode: null,
+                          customerName: null,
+                          amount: 0,
+                          address: '',
+                          latitude: null,
+                          longitude: null,
+                          distance: 0,
+                          status: serverStatus,
+                          sequence: 0,
+                          remarks: null,
+                        ),
+                      )
+                      .status
+                : serverStatus;
 
-        final purchasesList = purchasesRes.data['data'] as List<dynamic>;
+            return InvoiceStop(
+              id: invoiceId,
+              postDispatchPlanId: inv['post_dispatch_plan_id'] as int? ?? 0,
+              invoiceId: isInvoiceMap
+                  ? (inv['invoice_id']['invoice_id'] as int? ?? 0)
+                  : (inv['invoice_id'] as int? ?? 0),
+              invoiceNo: invoiceNo ?? 'INV-#${inv['invoice_id']}',
+              customerCode: customerCode,
+              customerName: customerName,
+              amount: netAmount ?? totalAmount ?? 0.0,
+              address: isInvoiceMap
+                  ? (inv['invoice_id']['shipping_address'] as String? ??
+                        'No Address')
+                  : 'No Address',
+              latitude: _coordinateFromCustomer(customerData, 'latitude'),
+              longitude: _coordinateFromCustomer(
+                customerData,
+                'longitude',
+                isLatitude: false,
+              ),
+              distance: (inv['distance'] as num?)?.toDouble() ?? 0.0,
+              status: localStatus,
+              sequence: inv['sequence'] as int? ?? 0,
+              remarks: inv['remarks'] as String?,
+            );
+          }),
+        );
+
         _purchaseStops = purchasesList
             .map(
               (p) => PurchaseStop(
@@ -687,7 +703,6 @@ class TripProvider extends ChangeNotifier {
             )
             .toList();
 
-        final othersList = othersRes.data['data'] as List<dynamic>;
         _otherStops = othersList
             .map(
               (o) => OtherStop(
@@ -771,17 +786,11 @@ class TripProvider extends ChangeNotifier {
       final profile = await _auth.getProfile();
       if (profile == null) return;
 
-      final response = await _api.getDirectus(
-        '/items/post_dispatch_plan',
-        queryParams: {
-          'filter[driver_id][_eq]': profile.userId,
-          'filter[status][_in]': 'For Dispatch,For Inbound',
-          'sort': '-id',
-          'limit': '20',
-          'fields': '*,vehicle_id.*',
-        },
+      final dataList = await _tripRepository.fetchPlanList(
+        driverId: profile.userId,
+        statusIn: 'For Dispatch,For Inbound',
+        limit: 20,
       );
-      final dataList = response.data['data'] as List<dynamic>;
       final activeId = _activeTrip?.id;
       _pendingPlans = dataList
           .where((e) => e['id'] as int != activeId)
@@ -804,29 +813,18 @@ class TripProvider extends ChangeNotifier {
       final profile = await _auth.getProfile();
       if (profile == null) return;
 
-      final response = await _api.getDirectus(
-        '/items/post_dispatch_plan',
-        queryParams: {
-          'filter[driver_id][_eq]': profile.userId,
-          'filter[status][_in]': 'For Clearance,Posted',
-          'sort': '-date_encoded',
-          'limit': '20',
-          'fields': '*,vehicle_id.*',
-        },
+      final dataList = await _tripRepository.fetchPlanList(
+        driverId: profile.userId,
+        statusIn: 'For Clearance,Posted',
+        sort: '-date_encoded',
+        limit: 20,
       );
-      final dataList = response.data['data'] as List<dynamic>;
       final planIds = dataList.map((e) => e['id'] as int).toList();
 
       Map<int, List<Map<String, dynamic>>> budgetMap = {};
       if (planIds.isNotEmpty) {
         try {
-          final budgetRes = await _api.getDirectus(
-            '/items/post_dispatch_budgeting',
-            queryParams: {
-              'filter[post_dispatch_plan_id][_in]': planIds.join(','),
-            },
-          );
-          final budgetList = budgetRes.data['data'] as List<dynamic>;
+          final budgetList = await _tripRepository.fetchBudgetForPlans(planIds);
           for (final b in budgetList) {
             final pid = b['post_dispatch_plan_id'] as int;
             budgetMap.putIfAbsent(pid, () => []);
@@ -868,16 +866,12 @@ class TripProvider extends ChangeNotifier {
       final profile = await _auth.getProfile();
       if (profile == null) return;
 
-      final response = await _api.getDirectus(
-        '/items/post_dispatch_plan',
-        queryParams: {
-          'filter[driver_id][_eq]': profile.userId,
-          'filter[status][_in]': 'For Inbound,For Clearance,Posted',
-          'sort': '-date_encoded',
-          'limit': 20,
-        },
+      final data = await _tripRepository.fetchPlanList(
+        driverId: profile.userId,
+        statusIn: 'For Inbound,For Clearance,Posted',
+        sort: '-date_encoded',
+        limit: 20,
       );
-      final data = response.data['data'] as List<dynamic>;
       _cachedHistory = data
           .map((e) => PostDispatchPlan.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -904,14 +898,7 @@ class TripProvider extends ChangeNotifier {
   Future<void> _cacheInvoiceStatusesForPlans(List<int> planIds) async {
     if (planIds.isEmpty) return;
     try {
-      final res = await _api.getDirectus(
-        '/items/post_dispatch_invoices',
-        queryParams: {
-          'filter[post_dispatch_plan_id][_in]': planIds.join(','),
-          'fields': 'id,status,post_dispatch_plan_id',
-        },
-      );
-      final list = res.data['data'] as List<dynamic>;
+      final list = await _tripRepository.fetchInvoiceStatusesForPlans(planIds);
       final byPlan = <int, List<Map<String, dynamic>>>{};
       for (final inv in list) {
         final pid = inv['post_dispatch_plan_id'] as int?;
@@ -1033,6 +1020,7 @@ class TripProvider extends ChangeNotifier {
       ActionEntry(
         actionType: ActionType.confirmDeparture,
         payload: {
+          'plan_id': targetPlan.id,
           'time_of_dispatch': nowStr,
           'status': 'For Inbound',
           if (remarks != null && remarks.isNotEmpty) 'remarks': remarks,
@@ -1049,16 +1037,8 @@ class TripProvider extends ChangeNotifier {
         ActionEntry(
           actionType: ActionType.updateInvoicesDeparture,
           payload: {
-            'query': {
-              'filter': {
-                'invoice_id': {'_in': invoiceIds},
-              },
-            },
-            'data': {
-              'dispatch_date': nowStr,
-              'transaction_status': 'En Route',
-              'isDispatched': 1,
-            },
+            'invoice_ids': invoiceIds,
+            'time_of_dispatch': nowStr,
           },
           endpoint: '/items/sales_invoice',
           httpMethod: 'PATCH',
@@ -1075,12 +1055,7 @@ class TripProvider extends ChangeNotifier {
           ActionEntry(
             actionType: ActionType.updateOrdersDeparture,
             payload: {
-              'query': {
-                'filter': {
-                  'order_no': {'_in': orderNos},
-                },
-              },
-              'data': {'order_status': 'En Route'},
+              'order_nos': orderNos,
             },
             endpoint: '/items/sales_order',
             httpMethod: 'PATCH',
@@ -1187,6 +1162,7 @@ class TripProvider extends ChangeNotifier {
       ActionEntry(
         actionType: ActionType.markArrived,
         payload: {
+          'plan_id': targetPlan.id,
           'status': 'For Clearance',
           'time_of_arrival': nowStr,
           'remarks_arrival': remarks ?? '',
@@ -1298,10 +1274,19 @@ class TripProvider extends ChangeNotifier {
       throw ArgumentError('Driver user ID is null. Please log in again.');
     }
 
+    final nowStr = TimezoneService().formatNow();
+
     await _queue.enqueue(
       ActionEntry(
         actionType: ActionType.updateStopStatus,
-        payload: {'status': status, 'remarks': remarks},
+        payload: {
+          'invoice_id': invoiceId,
+          'status': status,
+          'remarks': remarks,
+          'invoiceAt': nowStr,
+          'business_time_zone': 'Asia/Manila',
+          'driver_user_id': driverUserId,
+        },
         endpoint: '/items/post_dispatch_invoices/$invoiceId',
         httpMethod: 'PATCH',
         priority: ActionPriority.urgent,
@@ -1368,7 +1353,11 @@ class TripProvider extends ChangeNotifier {
     await _queue.enqueue(
       ActionEntry(
         actionType: ActionType.updateStopStatus,
-        payload: {'status': status, 'remarks': remarks},
+        payload: {
+          'other_stop_id': stopId,
+          'status': status,
+          'remarks': remarks,
+        },
         endpoint: '/items/post_dispatch_plan_others/$stopId',
         httpMethod: 'PATCH',
         priority: ActionPriority.urgent,

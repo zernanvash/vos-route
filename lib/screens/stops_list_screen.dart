@@ -186,9 +186,7 @@ void _showOtherStopStatusDialog(BuildContext context, OtherStop stop) {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () {
                 Navigator.pop(ctx);
                 context.read<TripProvider>().updateOtherStopStatus(

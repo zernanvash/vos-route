@@ -984,7 +984,7 @@ Photos are stored in `post_dispatch_trip_photos` (collection + `type: 'invoice'`
 
 ### 22.10 Dispatch Plan Seeding (SCM Web)
 
-15 pre-dispatch plans (`PDP-346` through `PDP-360`) seeded at branch 190 for driver 900002 with complete consolidation linkage for dispatch-creation testing. See `scm-vault/supply-chain/Dispatch Plan Seeding Blueprint.md`.
+15 pre-dispatch plans (`PDP-346` through `PDP-360`) seeded at branch 190 for driver 900002 with complete consolidation linkage for dispatch-creation testing. See `research-vault/vosroute/Dispatch Plan Seeding Blueprint.md`.
 
 ---
 

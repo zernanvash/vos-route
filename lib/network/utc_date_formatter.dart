@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 class UtcDateFormatter {
   UtcDateFormatter._();
 
-  /// Converts a local device timestamp to UTC by treating the calendar and 
+  /// Converts a local device timestamp to UTC by treating the calendar and
   /// clock values as if they occurred in the business's timezone, returning an ISO 8601 string.
   static String format(DateTime dateTime, String businessTimeZone) {
     try {

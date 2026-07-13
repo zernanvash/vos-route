@@ -134,12 +134,7 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
           : Column(
               children: [
                 Expanded(child: _mapView(lat, lng)),
-                _navigateButtons(
-                  cs: cs,
-                  lat: lat,
-                  lng: lng,
-                  label: _getName(),
-                ),
+                _navigateButtons(cs: cs, lat: lat, lng: lng, label: _getName()),
               ],
             ),
     );
@@ -235,8 +230,11 @@ class _StopDetailScreenState extends State<StopDetailScreen> {
               icon: Icons.open_in_new,
               label: 'Other',
               color: AppColors.border,
-              onTap: () =>
-                  MapLaunchService.openGeneric(lat: lat, lng: lng, query: label),
+              onTap: () => MapLaunchService.openGeneric(
+                lat: lat,
+                lng: lng,
+                query: label,
+              ),
             ),
           ),
         ],

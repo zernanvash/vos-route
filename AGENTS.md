@@ -4,7 +4,7 @@
 > Design doc at `docs/VOSRoute-Documentation.md` is the architecture reference but may conflict with code — code is truth.
 
 ## Parent project
-Part of the SCM monorepo at `../`. All work logged in `../scm-vault/supply-chain/Task Execution Journal.md`.
+Part of the SCM monorepo at `../`. All work logged in `../research-vault/Task Execution Journal.md`.
 
 ## Critical architecture — two Dio instances
 

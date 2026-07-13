@@ -38,7 +38,7 @@ void main() async {
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');
   }
-  
+
   // 1. Initialize DB singleton and run migrations
   final db = AppDatabase();
   await db.executor.ensureOpen(db);

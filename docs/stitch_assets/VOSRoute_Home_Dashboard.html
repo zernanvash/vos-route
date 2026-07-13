@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VOSRoute Driver Home</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Manrope:wght@600&family=Plus+Jakarta+Sans:wght@600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Manrope:wght@100..900&family=Plus+Jakarta+Sans:wght@100..900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-effect {
+      background: rgba(25, 25, 34, 0.6);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .card-border {
+      border: 1px solid #1F1F27;
+    }
+    body {
+      background-color: #080810;
+      color: #e4e1ed;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    /* Hide scrollbar for IE, Edge and Firefox */
+    .no-scrollbar {
+      -ms-overflow-style: none;  /* IE and Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
+  </style>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "primary-fixed-dim": "#b4c5ff",
+            "on-tertiary-fixed-variant": "#46464f",
+            "surface-bright": "#393842",
+            "surface-container-lowest": "#0d0d16",
+            "on-surface": "#e4e1ed",
+            "surface-dim": "#13131b",
+            "secondary-fixed": "#e3e0f1",
+            "text-primary": "#FAFAFA",
+            "primary-container": "#3b6ef0",
+            "on-tertiary-container": "#292931",
+            "on-secondary-fixed-variant": "#464552",
+            "secondary-fixed-dim": "#c7c5d5",
+            "on-tertiary": "#303038",
+            "success": "#22C55E",
+            "error": "#EF4444",
+            "surface-tint": "#b4c5ff",
+            "secondary": "#c7c5d5",
+            "inverse-primary": "#1353d6",
+            "on-primary-fixed-variant": "#003da9",
+            "border-muted": "#1F1F27",
+            "text-secondary": "#ADADB8",
+            "tertiary-fixed": "#e4e1ec",
+            "surface-container-high": "#292932",
+            "background": "#080810",
+            "tertiary-fixed-dim": "#c7c5d0",
+            "info": "#3B82F6",
+            "surface": "#13131b",
+            "on-primary-fixed": "#00174c",
+            "error-container": "#93000a",
+            "clearance": "#EAB308",
+            "inverse-on-surface": "#302f39",
+            "on-error-container": "#ffdad6",
+            "surface-container-highest": "#34343d",
+            "on-tertiary-fixed": "#1b1b23",
+            "primary": "#b4c5ff",
+            "on-secondary-fixed": "#1b1a26",
+            "on-primary": "#002979",
+            "on-secondary-container": "#b9b7c6",
+            "on-primary-container": "#000419",
+            "tertiary": "#c7c5d0",
+            "surface-container-low": "#1b1b23",
+            "outline": "#8d90a0",
+            "surface-container": "#1f1f28",
+            "on-surface-variant": "#c3c6d7",
+            "tertiary-container": "#918f9a",
+            "secondary-container": "#484855",
+            "outline-variant": "#434654",
+            "on-secondary": "#302f3b",
+            "text-tertiary": "#6B6B7A",
+            "surface-variant": "#34343d",
+            "inverse-surface": "#e4e1ed",
+            "warning": "#F97316",
+            "on-error": "#690005",
+            "primary-fixed": "#dbe1ff",
+            "on-background": "#e4e1ed"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "xl": "32px",
+            "sm": "12px",
+            "md": "16px",
+            "xs": "8px",
+            "xxs": "4px",
+            "lg": "24px"
+          },
+          "fontFamily": {
+            "title-md": ["Plus Jakarta Sans"],
+            "display-lg": ["Plus Jakarta Sans"],
+            "label-sm": ["Manrope"],
+            "body-md": ["Inter"]
+          },
+          "fontSize": {
+            "title-md": ["18px", {"lineHeight": "1.4", "fontWeight": "600"}],
+            "display-lg": ["28px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "label-sm": ["12px", {"lineHeight": "1.3", "letterSpacing": "0.05em", "fontWeight": "600"}],
+            "body-md": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body-md text-on-background selection:bg-primary/30">
+<!-- Top App Bar -->
+<header class="docked full-width top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border-muted flex justify-between items-center w-full px-lg py-md transition-all duration-200">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center border-2 border-primary-fixed-dim/20 shadow-sm overflow-hidden">
+<span class="font-title-md text-on-primary-container">TD</span>
+</div>
+<h1 class="font-display-lg text-display-lg text-primary tracking-tight">VOSRoute</h1>
+</div>
+<div class="flex items-center gap-md">
+<button class="w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-95 hover:bg-surface-variant/50">
+<span class="material-symbols-outlined text-primary">sensors</span>
+</button>
+</div>
+</header>
+<main class="min-h-screen pb-32 pt-xs px-lg space-y-lg max-w-2xl mx-auto no-scrollbar overflow-y-auto">
+<!-- Profile Card (Modernized Glassmorphism) -->
+<section class="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary-container to-[#1a2e6e] p-lg shadow-xl group transition-transform duration-300">
+<!-- Decorative background blur -->
+<div class="absolute -top-12 -right-12 w-32 h-32 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700"></div>
+<div class="relative z-10 flex flex-col gap-sm">
+<div class="flex items-center justify-between">
+<h2 class="font-display-lg text-white">Test Driver</h2>
+<span class="px-sm py-xxs bg-white/20 backdrop-blur-md rounded-full text-[10px] font-bold text-white tracking-widest uppercase">Verified</span>
+</div>
+<div class="flex items-center gap-xs">
+<span class="material-symbols-outlined text-white/70 text-sm">mail</span>
+<p class="text-white/80 font-body-md">testdriver@men2corp.com</p>
+</div>
+</div>
+</section>
+<!-- Performance Card -->
+<section class="rounded-xl bg-surface-container card-border p-lg space-y-md">
+<div class="flex items-center justify-between">
+<h3 class="font-title-md text-primary">Performance</h3>
+<span class="text-label-sm text-text-tertiary">Tap chart for details</span>
+</div>
+<div class="flex justify-center items-center py-md relative">
+<!-- SVG Donut Chart -->
+<svg class="w-48 h-48 transform -rotate-90">
+<!-- Background circle -->
+<circle class="text-surface-container-highest" cx="96" cy="96" fill="transparent" r="80" stroke="currentColor" stroke-width="24"></circle>
+<!-- Red Segment (Remaining) -->
+<circle class="text-error" cx="96" cy="96" fill="transparent" r="80" stroke="currentColor" stroke-dasharray="502.6" stroke-dashoffset="150" stroke-width="24"></circle>
+<!-- Grey Segment (Delayed) -->
+<circle class="text-outline" cx="96" cy="96" fill="transparent" r="80" stroke="currentColor" stroke-dasharray="502.6" stroke-dashoffset="460" stroke-width="24"></circle>
+<!-- Green Segment (Completed - 32%) -->
+<circle class="text-success" cx="96" cy="96" fill="transparent" r="80" stroke="currentColor" stroke-dasharray="502.6" stroke-dashoffset="341.7" stroke-width="24"></circle>
+</svg>
+<!-- Center Text -->
+<div class="absolute flex flex-col items-center">
+<span class="font-display-lg text-display-lg text-text-primary">32%</span>
+<span class="text-label-sm text-text-secondary">44 stops</span>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-md pt-sm border-t border-border-muted/50">
+<div class="flex flex-col items-center">
+<div class="w-2 h-2 rounded-full bg-success mb-xxs"></div>
+<span class="text-[10px] text-text-tertiary uppercase tracking-tighter">Done</span>
+<span class="font-bold text-text-primary">14</span>
+</div>
+<div class="flex flex-col items-center">
+<div class="w-2 h-2 rounded-full bg-outline mb-xxs"></div>
+<span class="text-[10px] text-text-tertiary uppercase tracking-tighter">Delayed</span>
+<span class="font-bold text-text-primary">3</span>
+</div>
+<div class="flex flex-col items-center">
+<div class="w-2 h-2 rounded-full bg-error mb-xxs"></div>
+<span class="text-[10px] text-text-tertiary uppercase tracking-tighter">Left</span>
+<span class="font-bold text-text-primary">27</span>
+</div>
+</div>
+</section>
+<!-- Dispatch Queue -->
+<section class="space-y-md">
+<div class="flex items-center justify-between">
+<h3 class="font-title-md text-primary">Dispatch Queue</h3>
+<button class="text-label-sm text-primary-fixed-dim hover:underline transition-all">View All</button>
+</div>
+<div class="space-y-md">
+<!-- Active Job Card -->
+<div class="group relative bg-[#1353d6]/10 card-border rounded-xl p-md transition-all duration-300 hover:bg-[#1353d6]/15 border-l-4 border-l-primary-container">
+<div class="flex items-start gap-md">
+<div class="w-12 h-12 rounded-xl bg-primary-container/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+</div>
+<div class="flex-1 space-y-xxs">
+<div class="flex items-center justify-between">
+<span class="font-title-md text-text-primary">PDP-20260724-6970</span>
+<span class="px-sm py-xxs bg-primary-container text-on-primary-container text-[10px] font-bold rounded-full tracking-wide">ACTIVE</span>
+</div>
+<p class="text-label-sm text-text-secondary">RHL 705 • Heavy Fleet</p>
+<div class="flex items-center gap-xs pt-xs">
+<span class="text-label-sm text-primary-fixed-dim">For Dispatch</span>
+<span class="material-symbols-outlined text-xs text-primary-fixed-dim">arrow_forward</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Secondary Job Card -->
+<div class="group bg-surface-container-low card-border rounded-xl p-md transition-all duration-300 hover:bg-surface-container">
+<div class="flex items-start gap-md">
+<div class="w-12 h-12 rounded-xl bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-text-secondary">route</span>
+</div>
+<div class="flex-1 space-y-xxs">
+<div class="flex items-center justify-between">
+<span class="font-title-md text-text-primary">PDP-20260723-6638</span>
+</div>
+<p class="text-label-sm text-text-secondary">CRA 133 • Medium Logistics</p>
+<div class="flex items-center gap-xs pt-xs">
+<span class="text-label-sm text-text-tertiary">For Dispatch</span>
+<span class="material-symbols-outlined text-xs text-text-tertiary">arrow_forward</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Pending Job Card -->
+<div class="group bg-surface-container-low card-border rounded-xl p-md transition-all duration-300 hover:bg-surface-container">
+<div class="flex items-start gap-md">
+<div class="w-12 h-12 rounded-xl bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-text-secondary">history_edu</span>
+</div>
+<div class="flex-1 space-y-xxs">
+<div class="flex items-center justify-between">
+<span class="font-title-md text-text-primary">PDP-20260722-1240</span>
+</div>
+<p class="text-label-sm text-text-secondary">LHR 902 • Logistics Standard</p>
+<div class="flex items-center gap-xs pt-xs">
+<span class="text-label-sm text-text-tertiary">Queued</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-md pb-md pt-sm bg-surface-container/90 backdrop-blur-lg border-t border-border-muted shadow-lg rounded-t-xl transition-all duration-300">
+<!-- Active: Home -->
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-xl px-md py-xs transition-transform duration-300 ease-out active:scale-90" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">route</span>
+<span class="font-label-sm text-label-sm mt-xxs">Trips</span>
+</a>
+<a class="flex flex-col items-center justify-center text-text-secondary px-md py-xs hover:text-primary-fixed-dim transition-transform duration-300 ease-out active:scale-90" href="#">
+<span class="material-symbols-outlined">local_shipping</span>
+<span class="font-label-sm text-label-sm mt-xxs">Fleet</span>
+</a>
+<a class="flex flex-col items-center justify-center text-text-secondary px-md py-xs hover:text-primary-fixed-dim transition-transform duration-300 ease-out active:scale-90" href="#">
+<span class="material-symbols-outlined">history_edu</span>
+<span class="font-label-sm text-label-sm mt-xxs">Logs</span>
+</a>
+<a class="flex flex-col items-center justify-center text-text-secondary px-md py-xs hover:text-primary-fixed-dim transition-transform duration-300 ease-out active:scale-90 relative" href="#">
+<span class="material-symbols-outlined">notifications</span>
+<span class="font-label-sm text-label-sm mt-xxs">Alerts</span>
+<span class="absolute top-2 right-4 w-2 h-2 bg-error rounded-full"></span>
+</a>
+</nav>
+<script>
+    // Micro-interactions and subtle effects
+    document.addEventListener('DOMContentLoaded', () => {
+      // Intersection observer for fade-in animations on scroll
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('opacity-100', 'translate-y-0');
+            entry.target.classList.remove('opacity-0', 'translate-y-4');
+          }
+        });
+      }, { threshold: 0.1 });
+
+      document.querySelectorAll('section').forEach(section => {
+        section.classList.add('transition-all', 'duration-700', 'opacity-0', 'translate-y-4');
+        observer.observe(section);
+      });
+      
+      // Dynamic donut interaction (dummy)
+      const donut = document.querySelector('svg');
+      donut.addEventListener('click', () => {
+        donut.classList.add('scale-105');
+        setTimeout(() => donut.classList.remove('scale-105'), 200);
+      });
+    });
+  </script>
+</body></html>

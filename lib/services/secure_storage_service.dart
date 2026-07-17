@@ -12,6 +12,7 @@ class SecureStorageService {
   static const String _dbPassphraseKey = 'vos_db_passphrase';
   static const String _passwordHashKey = 'vos_password_hash';
   static const String _loginEmailKey = 'vos_login_email';
+  static const String _sessionStartedAtKey = 'vos_session_started_at';
 
   Future<void> writeToken(String token) async {
     await _storage.write(key: _tokenKey, value: token);
@@ -57,6 +58,31 @@ class SecureStorageService {
 
   Future<void> deleteLoginEmail() async {
     await _storage.delete(key: _loginEmailKey);
+  }
+
+  Future<void> writeSessionStartedAt(DateTime value) async {
+    await _storage.write(
+      key: _sessionStartedAtKey,
+      value: value.toUtc().toIso8601String(),
+    );
+  }
+
+  Future<DateTime?> readSessionStartedAt() async {
+    final value = await _storage.read(key: _sessionStartedAtKey);
+    return value == null ? null : DateTime.tryParse(value)?.toUtc();
+  }
+
+  Future<void> deleteSessionStartedAt() async {
+    await _storage.delete(key: _sessionStartedAtKey);
+  }
+
+  Future<void> clearAuthentication() async {
+    await Future.wait([
+      deleteToken(),
+      deletePasswordHash(),
+      deleteLoginEmail(),
+      deleteSessionStartedAt(),
+    ]);
   }
 
   String _generatePassphrase() {

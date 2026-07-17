@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/action_queue_provider.dart';
 import '../models/action_entry.dart';
@@ -188,9 +189,32 @@ class _SyncLogScreenState extends State<SyncLogScreen> {
             ),
             if (entry.lastError != null) ...[
               const SizedBox(height: 6),
-              Text(
-                entry.lastError!,
-                style: TextStyle(color: AppColors.error, fontSize: 12),
+              InkWell(
+                onTap: () => _copyError(entry.lastError!),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          entry.lastError!,
+                          style: TextStyle(
+                            color: AppColors.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.copy_rounded,
+                        size: 16,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
             const SizedBox(height: 4),
@@ -221,6 +245,14 @@ class _SyncLogScreenState extends State<SyncLogScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _copyError(String error) async {
+    await Clipboard.setData(ClipboardData(text: error));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Sync error copied to clipboard')),
     );
   }
 

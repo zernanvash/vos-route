@@ -90,6 +90,7 @@ class BackgroundService {
 // flutter_background_service requires onStart/onForeground to be top-level or
 // static functions, not instance methods.
 
+@pragma('vm:entry-point')
 void _onStart(ServiceInstance service) {
   int? activeTripId;
   Timer? gpsTimer;

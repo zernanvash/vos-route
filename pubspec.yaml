@@ -48,6 +48,25 @@ flutter:
     - assets/images/logo.png
     - assets/images/app_icon.png
     - assets/images/app_icon.jpg
+  fonts:
+    - family: Plus Jakarta Sans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+          weight: 700
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-SemiBold.ttf
+          weight: 600
 
 flutter_launcher_icons:
   android: "launcher_icon"

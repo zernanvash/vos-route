@@ -1,104 +1,132 @@
 import 'package:flutter/material.dart';
 
-/// Theme-adaptive text styles.
-/// - Static const getters (no context): backward-compat for unmigrated screens.
-///   Use these in `const` contexts or when `BuildContext` isn't available.
-/// - Static methods ending in `Of(context)`: preferred for migrated screens.
 class AppTextStyle {
   AppTextStyle._();
 
-  // ── Static const (legacy compat – dark-mode colors) ───────────────────────
-  static const TextStyle heading = TextStyle(
+  static const String displayFontFamily = 'Plus Jakarta Sans';
+  static const String bodyFontFamily = 'Inter';
+  static const String labelFontFamily = 'Manrope';
+
+  static const TextStyle displayLg = TextStyle(
     color: Color(0xFFFAFAFA),
-    fontSize: 22,
-    fontWeight: FontWeight.bold,
-    letterSpacing: -0.5,
+    fontFamily: displayFontFamily,
+    fontSize: 28,
+    fontWeight: FontWeight.w700,
+    height: 1.2,
+    letterSpacing: 0,
   );
 
-  static const TextStyle subheading = TextStyle(
+  static const TextStyle titleMd = TextStyle(
     color: Color(0xFFFAFAFA),
-    fontSize: 16,
+    fontFamily: displayFontFamily,
+    fontSize: 18,
     fontWeight: FontWeight.w600,
-    letterSpacing: -0.2,
+    height: 1.4,
+    letterSpacing: 0,
   );
 
-  static const TextStyle body = TextStyle(
+  static const TextStyle bodyMd = TextStyle(
     color: Color(0xFFFAFAFA),
+    fontFamily: bodyFontFamily,
     fontSize: 14,
-    fontWeight: FontWeight.normal,
+    fontWeight: FontWeight.w400,
+    height: 1.5,
+    letterSpacing: 0,
   );
 
+  static const TextStyle labelSm = TextStyle(
+    color: Color(0xFFADADB8),
+    fontFamily: labelFontFamily,
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    letterSpacing: 0,
+  );
+
+  static const TextStyle heading = displayLg;
+  static const TextStyle subheading = titleMd;
+  static const TextStyle body = bodyMd;
   static const TextStyle caption = TextStyle(
     color: Color(0xFFADADB8),
+    fontFamily: bodyFontFamily,
     fontSize: 12,
-    fontWeight: FontWeight.normal,
+    fontWeight: FontWeight.w400,
+    height: 1.5,
+    letterSpacing: 0,
   );
-
-  static const TextStyle label = TextStyle(
-    color: Color(0xFFADADB8),
-    fontSize: 11,
-    fontWeight: FontWeight.w600,
-    letterSpacing: 0.4,
-  );
-
+  static const TextStyle label = labelSm;
   static const TextStyle sectionHeader = TextStyle(
     color: Color(0xFF3B6EF0),
+    fontFamily: labelFontFamily,
     fontSize: 13,
     fontWeight: FontWeight.w600,
-    letterSpacing: 0.2,
+    height: 1.3,
+    letterSpacing: 0,
   );
-
   static const TextStyle amount = TextStyle(
     color: Color(0xFFFAFAFA),
+    fontFamily: bodyFontFamily,
     fontSize: 13,
     fontWeight: FontWeight.w500,
+    height: 1.5,
+    letterSpacing: 0,
+    fontFeatures: [FontFeature.tabularFigures()],
   );
-
   static const TextStyle badge = TextStyle(
     color: Color(0xFFFAFAFA),
+    fontFamily: labelFontFamily,
     fontSize: 10,
     fontWeight: FontWeight.w600,
-    letterSpacing: 0.3,
+    height: 1.3,
+    letterSpacing: 0,
   );
 
-  // ── Context-aware (preferred for migrated screens) ────────────────────────
-  static TextStyle headingOf(BuildContext context) => TextStyle(
-    color: Theme.of(context).colorScheme.onSurface,
-    fontSize: 22,
-    fontWeight: FontWeight.bold,
-    letterSpacing: -0.5,
-  );
+  static TextStyle displayLgOf(BuildContext context) =>
+      displayLg.copyWith(color: Theme.of(context).colorScheme.onSurface);
 
-  static TextStyle subheadingOf(BuildContext context) => TextStyle(
-    color: Theme.of(context).colorScheme.onSurface,
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
-    letterSpacing: -0.2,
-  );
+  static TextStyle titleMdOf(BuildContext context) =>
+      titleMd.copyWith(color: Theme.of(context).colorScheme.onSurface);
 
-  static TextStyle bodyOf(BuildContext context) => TextStyle(
-    color: Theme.of(context).colorScheme.onSurface,
-    fontSize: 14,
-    fontWeight: FontWeight.normal,
-  );
+  static TextStyle bodyMdOf(BuildContext context) =>
+      bodyMd.copyWith(color: Theme.of(context).colorScheme.onSurface);
 
-  static TextStyle captionOf(BuildContext context) => TextStyle(
-    color: Theme.of(context).colorScheme.onSurfaceVariant,
-    fontSize: 12,
-    fontWeight: FontWeight.normal,
-  );
+  static TextStyle labelSmOf(BuildContext context) =>
+      labelSm.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
 
-  static TextStyle sectionHeaderOf(BuildContext context) => TextStyle(
-    color: Theme.of(context).colorScheme.primary,
-    fontSize: 13,
-    fontWeight: FontWeight.w600,
-    letterSpacing: 0.2,
-  );
+  static TextStyle headingOf(BuildContext context) => displayLgOf(context);
 
-  static TextStyle amountOf(BuildContext context) => TextStyle(
-    color: Theme.of(context).colorScheme.onSurface,
-    fontSize: 13,
-    fontWeight: FontWeight.w500,
-    fontFeatures: const [FontFeature.tabularFigures()],
-  );
+  static TextStyle subheadingOf(BuildContext context) => titleMdOf(context);
+
+  static TextStyle bodyOf(BuildContext context) => bodyMdOf(context);
+
+  static TextStyle captionOf(BuildContext context) =>
+      caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+
+  static TextStyle sectionHeaderOf(BuildContext context) =>
+      sectionHeader.copyWith(color: Theme.of(context).colorScheme.primary);
+
+  static TextStyle amountOf(BuildContext context) =>
+      amount.copyWith(color: Theme.of(context).colorScheme.onSurface);
+
+  static TextTheme textTheme(Brightness brightness) {
+    final primary = brightness == Brightness.dark
+        ? const Color(0xFFFAFAFA)
+        : const Color(0xFF0A0A10);
+    final secondary = brightness == Brightness.dark
+        ? const Color(0xFFADADB8)
+        : const Color(0xFF4A4A5A);
+
+    return TextTheme(
+      displayLarge: displayLg.copyWith(color: primary),
+      headlineMedium: titleMd.copyWith(color: primary),
+      titleLarge: titleMd.copyWith(color: primary),
+      titleMedium: titleMd.copyWith(color: primary, fontSize: 16),
+      bodyLarge: bodyMd.copyWith(color: primary, fontSize: 16),
+      bodyMedium: bodyMd.copyWith(color: primary),
+      bodySmall: bodyMd.copyWith(color: secondary, fontSize: 12),
+      labelLarge: labelSm.copyWith(color: primary),
+      labelMedium: labelSm.copyWith(color: secondary),
+      labelSmall: labelSm.copyWith(color: secondary),
+    );
+  }
 }

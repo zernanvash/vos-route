@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'secure_storage_service.dart';
 import '../models/driver_profile.dart';
+import 'auth_session_policy.dart';
 
 class AuthService {
   final ApiService _api = ApiService();
@@ -27,6 +27,7 @@ class AuthService {
         await _api.setToken(token);
         await _secure.writePasswordHash(password);
         await _secure.writeLoginEmail(email);
+        await _secure.writeSessionStartedAt(DateTime.now().toUtc());
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_emailKey, email);
         return null;
@@ -94,9 +95,7 @@ class AuthService {
   }
 
   Future<void> logout() async {
-    await _api.clearToken();
-    await _secure.deletePasswordHash();
-    await _secure.deleteLoginEmail();
+    await _secure.clearAuthentication();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_profileKey);
     await prefs.remove(_emailKey);
@@ -108,30 +107,28 @@ class AuthService {
   }
 
   Future<bool> _isTokenValid(String token) async {
-    try {
-      final isExpired = JwtDecoder.isExpired(token);
-      if (!isExpired) return true;
-
-      if (await _api.pingDirectus()) {
-        try {
-          await _api.get('/auth/me');
-          return true;
-        } catch (_) {
-          await _api.clearToken();
-          return false;
-        }
-      }
-
-      await _api.clearToken();
-      return false;
-    } catch (_) {
-      return true;
+    var startedAt = await _secure.readSessionStartedAt();
+    if (startedAt == null) {
+      startedAt = DateTime.now().toUtc();
+      await _secure.writeSessionStartedAt(startedAt);
     }
+    if (AuthSessionPolicy.isExpired(
+      startedAt: startedAt,
+      now: DateTime.now().toUtc(),
+    )) {
+      await logout();
+      return false;
+    }
+    return true;
   }
 
   Future<bool> validateCurrentToken() async {
     final token = await _api.getToken();
     if (token == null || token.isEmpty) return false;
     return _isTokenValid(token);
+  }
+
+  Future<DateTime?> getSessionStartedAt() {
+    return _secure.readSessionStartedAt();
   }
 }

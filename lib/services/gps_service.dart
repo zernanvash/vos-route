@@ -20,7 +20,9 @@ class GpsService {
   bool get isTracking => _isTracking;
   int get bufferedCount => _buffer.length;
 
-  void startTracking(int tripId) {
+  Future<void> startTracking(int tripId) async {
+    if (_isTracking && _activeTripId == tripId) return;
+    if (_isTracking) await stopTracking();
     _activeTripId = tripId;
     _isTracking = true;
     BackgroundService().startTracking(tripId);
@@ -36,10 +38,10 @@ class GpsService {
     );
   }
 
-  void stopTracking() {
+  Future<void> stopTracking() async {
     _captureTimer?.cancel();
     _flushTimer?.cancel();
-    _flushBuffer();
+    await _flushBuffer();
     _isTracking = false;
     _activeTripId = null;
     BackgroundService().stopTracking();
@@ -81,7 +83,7 @@ class GpsService {
   }
 
   Future<void> _flushBuffer() async {
-    if (_buffer.isEmpty || _activeTripId == null) return;
+    if (_buffer.isEmpty) return;
 
     final batch = List<Map<String, dynamic>>.from(_buffer);
     _buffer.clear();
@@ -92,7 +94,7 @@ class GpsService {
         payload: batch,
         endpoint: '/items/post_dispatch_gps_logs',
         httpMethod: 'POST',
-        batchGroup: 'gps:$_activeTripId',
+        batchGroup: 'gps:${batch.first['trip_id']}',
         priority: ActionPriority.low,
       ),
     );

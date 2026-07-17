@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../models/driver_profile.dart';
+import '../services/auth_session_policy.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -12,6 +13,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = true;
   String? _error;
   StreamSubscription<int>? _unauthorizedSub;
+  Timer? _sessionExpiryTimer;
 
   AuthProvider() {
     _init();
@@ -24,7 +26,7 @@ class AuthProvider extends ChangeNotifier {
 
   void _init() {
     _unauthorizedSub = _api.onUnauthorized.listen((_) {
-      logout();
+      logout(sessionExpired: true);
     });
     checkAuth();
   }
@@ -33,9 +35,19 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    final startedAt = await _authService.getSessionStartedAt();
+    final sessionExpired =
+        startedAt != null &&
+        AuthSessionPolicy.isExpired(
+          startedAt: startedAt,
+          now: DateTime.now().toUtc(),
+        );
     _isLoggedIn = await _authService.validateCurrentToken();
     if (_isLoggedIn) {
       _profile = await _authService.getProfile();
+      await _scheduleSessionExpiry();
+    } else if (sessionExpired) {
+      _error = 'Session expired. Please sign in again.';
     }
 
     _isLoading = false;
@@ -51,6 +63,7 @@ class AuthProvider extends ChangeNotifier {
     if (error == null) {
       _isLoggedIn = true;
       _profile = await _authService.getProfile();
+      await _scheduleSessionExpiry();
     } else {
       _error = error;
     }
@@ -60,17 +73,32 @@ class AuthProvider extends ChangeNotifier {
     return error == null;
   }
 
-  Future<void> logout() async {
+  Future<void> logout({bool sessionExpired = false}) async {
+    _sessionExpiryTimer?.cancel();
     await _authService.logout();
     _isLoggedIn = false;
     _profile = null;
-    _error = null;
+    _error = sessionExpired ? 'Session expired. Please sign in again.' : null;
     notifyListeners();
+  }
+
+  Future<void> _scheduleSessionExpiry() async {
+    _sessionExpiryTimer?.cancel();
+    final startedAt = await _authService.getSessionStartedAt();
+    if (startedAt == null) return;
+    final expiresAt = startedAt.add(AuthSessionPolicy.duration);
+    final remaining = expiresAt.difference(DateTime.now().toUtc());
+    if (remaining <= Duration.zero) {
+      await logout(sessionExpired: true);
+      return;
+    }
+    _sessionExpiryTimer = Timer(remaining, () => logout(sessionExpired: true));
   }
 
   @override
   void dispose() {
     _unauthorizedSub?.cancel();
+    _sessionExpiryTimer?.cancel();
     super.dispose();
   }
 }

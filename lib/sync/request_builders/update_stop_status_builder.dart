@@ -4,13 +4,14 @@ class UpdateStopStatusBuilder {
     required String status,
     required String? remarks,
     required int? driverUserId,
+    required String invoiceAt,
   }) {
     return {
       'path': '/items/post_dispatch_invoices/$invoiceId',
       'method': 'PATCH',
       'body': {
         'status': status,
-        'invoiceAt': driverUserId,
+        'invoiceAt': invoiceAt,
         'invoiced_by': driverUserId,
         'remarks': remarks,
       },

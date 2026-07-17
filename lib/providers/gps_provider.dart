@@ -21,13 +21,13 @@ class GpsProvider extends ChangeNotifier {
     }
     if (permission == LocationPermission.deniedForever) return;
 
-    _gpsService.startTracking(tripId);
+    await _gpsService.startTracking(tripId);
     _isTracking = true;
     notifyListeners();
   }
 
-  void stopTracking() {
-    _gpsService.stopTracking();
+  Future<void> stopTracking() async {
+    await _gpsService.stopTracking();
     _isTracking = false;
     notifyListeners();
   }

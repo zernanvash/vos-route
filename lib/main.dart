@@ -6,6 +6,7 @@ import 'services/api_service.dart';
 import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'services/timezone_service.dart';
+import 'services/notification_stop_resolver.dart';
 import 'providers/auth_provider.dart';
 import 'providers/trip_provider.dart';
 import 'providers/action_queue_provider.dart';
@@ -95,7 +96,20 @@ class VOSRouteApp extends StatelessWidget {
     switch (settings.name) {
       case AppRoutes.stopDetail:
         return MaterialPageRoute(
-          builder: (_) => StopDetailScreen(stop: settings.arguments as Object),
+          builder: (context) {
+            final trip = context.read<TripProvider>();
+            final stop = resolveNotificationStop(
+              settings.arguments,
+              trip.allStops,
+            );
+            if (stop == null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                trip.setTabIndex(2);
+              });
+              return const StopsListScreen();
+            }
+            return StopDetailScreen(stop: stop);
+          },
         );
       case AppRoutes.budget:
         return MaterialPageRoute(builder: (_) => const BudgetScreen());

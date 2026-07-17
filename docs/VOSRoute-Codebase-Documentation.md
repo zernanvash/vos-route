@@ -73,7 +73,7 @@ Important rule: the Spring JWT is not attached to Directus calls. Directus uses 
 
 Current hardcoded config:
 
-- Spring Boot: `http://100.105.235.94:8082`
+- Spring Boot: `http://100.68.114.32:8089`
 - Directus: `http://100.110.197.61:8056`
 - GPS interval: 60 seconds
 - GPS queue batch size config: 50
@@ -95,8 +95,9 @@ Login flow:
    - `POST /auth/login`
    - body: `{ email, hashPassword }`
 3. Response expects `token`.
-4. Token is written to `flutter_secure_storage`.
-5. Login email is stored in both secure storage and shared preferences.
+4. Token, login credentials required by the existing backend, and the absolute
+   15-day session start timestamp are written to encrypted secure storage.
+5. Login email is also stored in shared preferences for profile lookup.
 6. Driver profile is fetched from Directus `user` collection by email.
 
 Profile flow:
@@ -109,8 +110,11 @@ Profile flow:
 
 Token refresh behavior:
 
-- Spring Boot `_dio` has an interceptor that retries 401 by logging in again using stored email and stored `hashPassword`.
-- On refresh failure, token is deleted and `AuthProvider` logs out.
+- Spring Boot `_dio` retries a non-login 401 once by silently logging in with
+  the stored email and `hashPassword`, then replacing the JWT.
+- `/auth/login` itself bypasses refresh handling. Network failures and 5xx
+  responses retain the session. Confirmed silent-login 401/403, the absolute
+  15-day boundary, or explicit Sign Out clears all authentication state.
 
 ## 5. Directus Operational Data
 
@@ -446,7 +450,10 @@ Queue upload flow:
 2. UI queues action with `local_file_path`.
 3. `ActionQueueService` uploads file to Directus.
 4. The local path is removed from the payload.
-5. `directus_uuid` is added to the queued row.
+5. `directus_uuid` and the UTC `uploaded_at` timestamp are persisted in the queued row.
+6. The link row is created only after upload succeeds, using
+   `{trip_id, directus_uuid, type, uploaded_at}`. Duplicate detection uses the
+   same `trip_id` and `directus_uuid` fields.
 6. The action builder creates the final link request.
 
 Folder UUIDs:

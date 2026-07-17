@@ -12,73 +12,101 @@ import '../services/secure_storage_service.dart';
 
 part 'app_database.g.dart';
 
+typedef LegacyQueueReader = Future<List<Map<String, Object?>>> Function();
+
 @DriftDatabase(tables: [CachedSettings, OutboxActions])
 class AppDatabase extends _$AppDatabase {
   static final AppDatabase _instance = AppDatabase._internal();
   factory AppDatabase() => _instance;
 
-  AppDatabase._internal() : super(_openConnection());
+  final LegacyQueueReader _legacyQueueReader;
+
+  AppDatabase._internal()
+    : _legacyQueueReader = _readLegacyQueue,
+      super(_openConnection());
+
+  AppDatabase.forTesting(super.executor, {LegacyQueueReader? legacyQueueReader})
+    : _legacyQueueReader = legacyQueueReader ?? (() async => const []);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
-      await _seedFromActionQueue(m);
+      await seedFromLegacyQueue();
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         await m.createTable(outboxActions);
-        await _seedFromActionQueue(m);
       }
+      if (from < 3) await seedFromLegacyQueue();
     },
   );
-}
 
-Future<void> _seedFromActionQueue(Migrator m) async {
-  try {
-    final dbPath = await sqflite.getDatabasesPath();
-    final oldDbPath = p.join(dbPath, 'vosroute.db');
-    final oldDb = await sqflite.openDatabase(oldDbPath);
-    final pending = await oldDb.query(
-      'action_queue',
-      where: "status = 'pending' OR status = 'failed'",
-    );
-    if (pending.isNotEmpty) {
+  Future<void> seedFromLegacyQueue() async {
+    try {
+      final pending = await _legacyQueueReader();
       for (final row in pending) {
-        final createdAtMs =
-            DateTime.tryParse(
-              row['created_at'] as String? ?? '',
-            )?.millisecondsSinceEpoch ??
-            DateTime.now().millisecondsSinceEpoch;
-        final lastAttemptMs = row['last_attempt'] != null
-            ? DateTime.tryParse(
-                row['last_attempt'] as String,
-              )?.millisecondsSinceEpoch
-            : null;
-        await m.database.customStatement(
-          'INSERT INTO outbox (action, priority, args_json, schema_version, status, retry_count, max_retries, created_at, last_attempt, last_error) '
-          'VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)',
-          [
-            row['action_type'],
-            row['batch_priority'] ?? 3,
-            row['action_payload'],
-            row['status'],
-            row['retry_count'] ?? 0,
-            row['max_retries'] ?? 5,
-            createdAtMs,
-            lastAttemptMs,
-            row['last_error'],
-          ],
+        final action = row['action_type'] as String;
+        final argsJson = row['action_payload'] as String;
+        final createdAt =
+            DateTime.tryParse(row['created_at'] as String? ?? '') ??
+            DateTime.now().toUtc();
+        final duplicate =
+            await (select(outboxActions)..where(
+                  (t) =>
+                      t.action.equals(action) &
+                      t.argsJson.equals(argsJson) &
+                      t.createdAt.equals(createdAt),
+                ))
+                .getSingleOrNull();
+        if (duplicate != null) continue;
+        await into(outboxActions).insert(
+          OutboxActionsCompanion.insert(
+            action: action,
+            priority: row['batch_priority'] as int? ?? 3,
+            argsJson: argsJson,
+            schemaVersion: 1,
+            status: row['status'] as String? ?? 'pending',
+            retryCount: Value(row['retry_count'] as int? ?? 0),
+            maxRetries: Value(row['max_retries'] as int? ?? 5),
+            createdAt: createdAt,
+            lastAttempt: Value(
+              DateTime.tryParse(row['last_attempt'] as String? ?? ''),
+            ),
+            lastError: Value(row['last_error'] as String?),
+          ),
         );
       }
+    } catch (e) {
+      await into(outboxActions).insert(
+        OutboxActionsCompanion.insert(
+          action: 'update_stop_status',
+          priority: 1,
+          argsJson: '{}',
+          schemaVersion: 3,
+          status: 'failed',
+          createdAt: DateTime.now().toUtc(),
+          lastError: Value('Legacy queue migration failed: $e'),
+        ),
+      );
+      debugPrint('[Drift v3] action_queue seed failed (non-fatal): $e');
     }
-    await oldDb.close();
-  } catch (e) {
-    debugPrint('[Drift v2] action_queue seed failed (non-fatal): $e');
   }
+}
+
+Future<List<Map<String, Object?>>> _readLegacyQueue() async {
+  final dbPath = await sqflite.getDatabasesPath();
+  final oldDbPath = p.join(dbPath, 'vosroute.db');
+  final oldDb = await sqflite.openDatabase(oldDbPath);
+  final pending = await oldDb.query(
+    'action_queue',
+    where: "status = 'pending' OR status = 'failed'",
+  );
+  await oldDb.close();
+  return pending;
 }
 
 LazyDatabase _openConnection() {

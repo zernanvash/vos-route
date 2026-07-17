@@ -204,6 +204,27 @@ class _SosScreenState extends State<SosScreen> {
   Future<void> _submitSos() async {
     if (_descriptionController.text.trim().isEmpty) return;
 
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send emergency report?'),
+        content: const Text(
+          'This will queue an SOS report with your current trip and location.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Queue SOS'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     setState(() => _isSubmitting = true);
 
     final auth = context.read<AuthProvider>();
@@ -233,7 +254,7 @@ class _SosScreenState extends State<SosScreen> {
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Emergency report submitted'),
+          content: const Text('Emergency report queued'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(

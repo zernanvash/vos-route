@@ -1,117 +1,109 @@
 # AGENTS.md — VOSRoute (Fleet Dispatch Mobile App)
 
-> **Architecture**: Directus REST API for all operational queries/mutations. Spring Boot `ERP_SERVER` for auth only (+ FCM token registration).
-> Design doc at `docs/VOSRoute-Documentation.md` is the architecture reference but may conflict with code — code is truth.
+> **Brain context**: `.brain/systems/VOSRoute/` has detailed architecture, module map, route map, data contracts, storage matrix, workflows, and known risks.
+> **Root guidance**: `../AGENTS.md`
+
+> Also see the monorepo root `AGENTS.md` for cross-project orientation. This file is self-contained for VOSRoute-specific work — read it in full before editing.
+>
+> **Architecture**: Directus REST API for all operational queries/mutations, via a Drift-backed offline outbox. Spring Boot `ERP_SERVER` for auth + FCM token registration only.
+> **Source of truth for current code state**: the most recently scanned codebase-documentation pass in `docs/` (look for the latest "Scan date"). Older design docs (original offline-first plan, network-layer plan, architecture reconciliation plan, `VOSRoute-Documentation.md`) are historical context describing intended designs at various points — several describe behavior that was never fully shipped, or was shipped differently than planned. **Code is truth.** When a doc conflicts with the code, trust the code, and update the doc.
+> **Verification discipline**: this app has repeat history of "fixed" reports that turned out inaccurate — a bug fixed in one code path while an identical bug remained in a second, unnoticed path; a fix described but not actually merged; a fix "verified" by re-reading source rather than running the app. **Before reporting any fix as complete, provide the actual runtime artifact** (a query against the live/local DB, a grep across the whole codebase — not just the known file — a device log, or a test run output). A source-code description of intended behavior is not sufficient evidence.
 
 ## Parent project
 Part of the SCM monorepo at `../`. All work logged in `../research-vault/Task Execution Journal.md`.
 
-## Critical architecture — two Dio instances
+---
+
+## Behavioral Guidelines
+
+- **Think before coding**: state assumptions explicitly, present multiple interpretations rather than silently picking one, push back if a simpler approach exists, stop and ask if something is unclear.
+- **Simplicity first**: minimum code that solves the problem — no speculative features, abstractions, or configurability that wasn't requested.
+- **Surgical changes**: touch only what you must. Don't "improve" adjacent code/formatting. Match existing style. Remove only the imports/variables/functions your own change made unused — flag pre-existing dead code, don't delete it unprompted. Every changed line should trace directly to the request.
+- **Goal-driven execution**: define success as something verifiable, then loop until it's actually confirmed — not "make it work," but "write a test that reproduces the bug, then make it pass." **This is not optional in VOSRoute specifically** — see the Known Open Issues section below, most of which trace back to a fix being reported based on code inspection alone without holding up against real runtime behavior.
+
+---
+
+## Decisions Already Made — Do Not Revisit Without Explicit Instruction
+
+- **Static Directus token stays.** Reviewed and explicitly accepted by the senior dev as a company-internal-use-only risk. Do not propose removing it, routing through Spring Boot as a proxy, or building a BFF as a "fix" — it is not a bug.
+- **Push notifications stay on Spring Boot.** A migration to direct-Directus-write for token registration was drafted and explicitly reversed. Do not revisit unless a new plan is provided by the backend dev.
+- **The stored `hashPassword`-for-silent-refresh pattern is a separate, still-open question** from the static token decision above — it has not been explicitly accepted the same way. If touching `AuthService`/`SecureStorageService`, flag this rather than assuming it's settled; prefer a genuine refresh-token flow if the backend can support one.
+- **VOSRoute's state management is the `provider` package** (`ChangeNotifier`-based). Do not introduce Riverpod, Freezed, Flutter Hooks, or Supabase — these belong to a different stack entirely and were explicitly evaluated and rejected for this app. Don't adopt them opportunistically from a generic style guide.
+
+---
+
+## Critical Architecture — Two Dio Instances, One Outbox
 
 `ApiService` (`lib/services/api_service.dart`) manages **two separate Dio instances**:
 
 | Instance | Base URL | Auth | Used For |
 |---|---|---|---|
-| `_dio` | Spring Boot `:8082` | JWT Bearer (injected via interceptor from `SecureStorageService`) | Login, FCM token registration |
-| `_directusDio` | Directus `:8056` | Static token `AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW` in header | **All** operational data: trip fetch, stop updates, GPS logs, photos, SOS, etc. |
+| `_dio` | Spring Boot | JWT Bearer (via `AuthRefreshInterceptor`, single-flight lock on 401) | Login, FCM token registration |
+| `_directusDio` | Directus | Static token in header | **All** operational data: trip fetch, stop updates, GPS logs, photos, SOS, etc. |
 
-**Key gotcha**: JWT is NEVER sent to Directus. Directus calls use a fixed static token hardcoded in `AppConfig`. The Spring Boot JWT is NOT used for operational data — only for `/auth/login` and `/api/dispatch/mobile/register-device`.
+Both instances carry an `ExceptionInterceptor` mapping raw `DioException`s to a typed `AppException` hierarchy (`NetworkException` / `ServerException` / `ClientException` / `AuthException`) — consume these types in calling code rather than re-checking raw status codes.
 
-## Backend Contracts
+**Key gotcha**: JWT is NEVER sent to Directus. Directus calls use the fixed static token. The Spring Boot JWT is only used for `/auth/login` and `/api/dispatch/mobile/register-device`.
 
-### 1. Spring Boot (`http://100.105.235.94:8082`) — Auth only
+For detailed architecture (offline outbox, GPS, repository layer, photo flow, screens, navigation, backend contracts):
 
-| Method | Route | Payload | Notes |
-|--------|-------|---------|-------|
-| `POST` | `/auth/login` | `{ email, hashPassword }` | Returns `{ token }` (NOT `access_token`). Field is `hashPassword` (NOT `password`). |
-| `POST` | `/api/dispatch/mobile/register-device` | `{ fcmToken, deviceInfo }` | Registers FCM token. Called from `NotificationService`. |
+→ `.brain/systems/VOSRoute/`
 
-Driver profile is fetched from **Directus** (`/items/user?filter[user_email][_eq]=...`), NOT from Spring Boot `/auth/me`. `DriverProfile.fromJson` handles both camelCase and snake_case fields.
+## Known Open Issues
 
-### 2. Directus CMS (`http://100.110.197.61:8056`) — All operational data
+Each of these has been reported "fixed" at least once in this project's history; some fixes did not hold, or fixed one code path while leaving a duplicate elsewhere. Re-verify with runtime evidence before relying on any of them:
 
-Static token: `AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW`
+1. **`invoiceAt` field receiving the driver's user ID instead of a timestamp** — root cause traced to `lib/sync/request_builders/update_stop_status_builder.dart` hardcoding `invoiceAt: driverUserId` in the builder itself, independent of what `TripProvider` enqueues. Multiple earlier fixes patched `TripProvider`'s enqueue payload instead of the builder, which did not resolve it.
+2. **`outbox` vs `outbox_actions` table name mismatch** — found and fixed in at least two separate locations independently; grep the whole codebase before assuming no more instances exist.
+3. **GPS batches processed before priority-1 actions** — intended order is urgent-first, GPS-last; has been both "fixed" and observed still-broken in this codebase at different points. Verify with an actual mixed-priority test run, not a code read.
+4. **Photo field-name mismatches** — UI/queue code references `trip_id` in places where the live Directus schema may actually use `post_dispatch_plan_id`; de-dupe checks may query a different field (`directus_uuid`) than what the create payload actually posts (`file`). Confirm the real live schema before changing either side.
+5. **Orphaned `post_dispatch_trip_photos` rows** — link rows created without a corresponding successful file upload (empty `directus_uuid`). Likely placeholder-then-patch ordering instead of upload-then-create; needs the write path traced and fixed, plus a data cleanup decision for existing orphaned rows.
+6. **Notification `/stop-detail` deep link type mismatch** — `StopDetailScreen` expects a full stop object; the notification tap handler may pass only a primitive id, causing a crash on tap.
+7. **GPS `trip_id` null** — an async-gap bug where a tick's trip context could go stale between starting a position fetch and the fetch resolving; fixed at least once by capturing the trip ID into a local variable before the `await`, but confirm this guard exists in both `GpsService` and `BackgroundService` (two independent capture paths).
+8. **Duplicate startup fetches** — `MainShell` and `HomeScreen.initState` may both independently trigger trip fetches on launch: wasteful, and a source of inconsistent local state timing.
+9. **`ForegroundServiceDidNotStartInTimeException` crash risk** — see GPS Tracking section in brain.
 
-**Trip fetch (TripProvider):** makes 5 parallel `getDirectus()` calls and assembles manually:
-1. `GET /items/post_dispatch_plan` — filter `driver_id` + `status[_in]=For Dispatch,For Inbound`, sort `-id`, limit 1
-2. `GET /items/post_dispatch_plan_staff` — filter by plan_id
-3. `GET /items/post_dispatch_budgeting` — filter by plan_id
-4. `GET /items/post_dispatch_invoices` — filter by plan_id, fields `*,invoice_id.*`
-5. `GET /items/post_dispatch_purchases` + `GET /items/post_dispatch_plan_others` — filter by plan_id
-
-| Collection | Action | Endpoint | Notes |
-|---|---|---|---|
-| `post_dispatch_plan` | Update Status | `PATCH /items/post_dispatch_plan/{id}` | confirmDeparture: `{ status: "For Inbound", time_of_dispatch, remarks }`. markArrivedAtBase: `{ status: "For Clearance", time_of_arrival, remarks_arrival }`. |
-| `sales_invoice` | Bulk Update | `PATCH /items/sales_invoice` | confirmDeparture also sets `{ transaction_status: "En Route", isDispatched: 1, dispatch_date }` on linked invoices |
-| `sales_order` | Bulk Update | `PATCH /items/sales_order` | confirmDeparture also sets `{ order_status: "En Route" }` on linked orders |
-| `post_dispatch_invoices` | Update Stop | `PATCH /items/post_dispatch_invoices/{id}` | `{ status, invoiceAt, remarks }` |
-| `post_dispatch_gps_logs` | GPS Logs | `POST /items/post_dispatch_gps_logs` | **Batched** array payload, not single points |
-| `post_dispatch_nte` | POD Link | `POST /items/post_dispatch_nte` | Links Directus file UUID to stop: `{ post_dispatch_invoice_id, file, doc_no }` |
-| `post_dispatch_trip_photos` | Trip Photos | `POST /items/post_dispatch_trip_photos` | `{ post_dispatch_plan_id, file, type }` where type is `outbound` or `inbound` |
-| `post_dispatch_plan_others` | Ad-Hoc Stops | `POST /items/post_dispatch_plan_others` | `{ post_dispatch_plan_id, remarks, distance, sequence, status }` |
-| `fleet_emergency_reports` | SOS | `POST /items/fleet_emergency_reports` | Payload assembled by `EmergencyReport.toApiPayload()` |
-| `/files` | File Upload | `POST /files` | Multipart form-data with static token Bearer auth. Returns `{ data: { id: "uuid" } }` |
-
-## Photo flow (3-step, not 2-step)
-
-1. Capture via `image_picker` → save local path
-2. Upload to Directus `POST /files` via `UploadService` → get UUID
-3. `ActionQueueService` later links the UUID to the Directus collection (`post_dispatch_nte` / `post_dispatch_trip_photos`). The `ActionEntry` payload carries a `local_file_path`; the executor uploads it to a fixed folder (`d3940009-…` for POD, `13954431-…` for trip photos) before sending. Watch for duplicate links — the executor de-dupes by checking the target collection for an existing `file` + parent id.
-
-## Offline-first architecture — unified `action_queue`
-
-All writes are enqueued to a local SQLite table `action_queue` (db `vosroute.db`, **version 3**), then flushed by `ActionQueueService` (`lib/services/action_queue_service.dart`):
-
-- Triggered by `connectivity_plus` reconnect + a `Timer.periodic(10s)`.
-- Processes GPS batches first, then pending actions by `batch_priority` (1 → 2 → 3).
-- GPS points are coalesced into batches of **50** and POSTed as one array to `post_dispatch_gps_logs`.
-- Retry: exponential backoff (1/2/4/8/16/30s), max 5 attempts. Client 4xx (except 401) and type errors are marked **permanently failed**. `sync_log_screen` shows pending/failed entries with retry + clear.
-- **Legacy tables** (`cached_trips`, `gps_queue`, `pod_queue`, `trip_photo_queue`, `emergency_queue`, `ad_hoc_stop_queue`) were folded into `action_queue` during the **v2→v3** migration. Do not rely on them.
-
-**Two `AppDatabase` classes exist** — be careful which you import:
-- `lib/db/database.dart` — **sqflite**, the real operational DB (`action_queue`, `vosroute.db`). Used by `ActionQueueService`.
-- `lib/db/app_database.dart` — **Drift**, a separate small DB holding only the `CachedSettings` table (`vosroute_drift.db`). Used at startup via `executor.ensureOpen()`.
-
-## GPS tracking
-
-- Timer-based (NOT geolocator stream): `Timer.periodic(60s)` calls `Geolocator.getCurrentPosition()` each tick (`AppConfig.gpsIntervalSeconds`).
-- **Starts** on departure confirm, **stops** on arrived-at-base (or app dispose). Reactivated on startup if an in-progress trip has a `timeOfDispatch`.
-
-## Codebase map
+## Codebase Map
 
 | Layer | Key files |
 |---|---|
 | `lib/config/` | `app_config.dart` — hardcoded URLs, intervals, static token, map style |
-| `lib/models/` | 6 models: `trip`, `stop`, `driver_profile`, `emergency_report`, `photo_quest`, `action_entry` |
-| `lib/services/` | `api_service` (two Dio instances), `auth_service`, `action_queue_service` (offline flush), `gps_service` (timer), `upload_service` (Directus files), `notification_service` (FCM), `emergency_service`, `map_launch_service` (Waze/Google via `url_launcher`), `background_service`, `secure_storage_service`, `timezone_service` |
-| `lib/providers/` | `auth_provider`, `trip_provider` (parallel fetch + mutations, owns bottom-nav tab index), `action_queue_provider` (drives the flush timer), `gps_provider`, `theme_provider` |
-| `lib/db/` | `database.dart` (sqflite schema + v2→v3 migration), `app_database.dart` + `tables/` + `daos/` (Drift, `CachedSettings` only) |
-| `lib/screens/` | `login`, `home` (dashboard — `fl_chart` pie of invoice statuses + active/pending DP queue), `dispatch_plans` (active DP header + Confirm Departure/Arrive + trip details/crew/progress + pending plans list), `stops_list` (customer-grouped with aggregate indicators + inline status), `stop_detail` (embedded **maplibre** map + required signature upload flow), `budget`, `trip_photos`, `history`, `sos`, `settings`, `quest_screen` (Photo Quest feature), `sync_log_screen` (offline queue visibility) |
+| `lib/models/` | `trip`, `stop`, `driver_profile`, `emergency_report`, `photo_quest`, `action_entry` |
+| `lib/services/` | `api_service` (two Dio instances + interceptors), `auth_service`, `action_queue_service` (outbox worker), `gps_service` (timer), `upload_service` (Directus files), `notification_service` (FCM), `emergency_service`, `map_launch_service` (Waze/Google via `url_launcher`), `background_service`, `secure_storage_service`, `timezone_service` |
+| `lib/repositories/` | `trip_repository.dart` — pass-through layer for `TripProvider`'s Directus reads |
+| `lib/sync/request_builders/` | `TripTransitionBuilder`, `GpsBatchBuilder`, `SendSosBuilder`, `CreateAdhocStopBuilder`, `UploadPodBuilder`, `UpdateStopStatusBuilder` |
+| `lib/network/` | `exception_interceptor.dart` (typed `AppException` mapping), `auth_refresh_interceptor.dart` (single-flight 401 handling) |
+| `lib/providers/` | `auth_provider`, `trip_provider` (still a monolith, ~1300+ lines, owns bottom-nav tab index — not yet split), `action_queue_provider`, `gps_provider`, `theme_provider` |
+| `lib/db/` | `database.dart` (legacy sqflite, dead code / migration source only), `app_database.dart` + `tables/outbox_table.dart` + `daos/outbox_dao.dart` (Drift, current real outbox + `CachedSettings`) |
+| `lib/screens/` | `login`, `home`, `dispatch_plans`, `stops_list`, `stop_detail` (maplibre map), `budget`, `trip_photos`, `history`, `sos`, `settings`, `quest_screen`, `sync_log_screen`, `invoices_screen`, `invoice_detail_screen` |
 | `lib/widgets/` | `stop_card`, `signature_pad`, `photo_capture_sheet`, `status_chip` |
 
-**Bottom nav: 4 tabs** — Home / Plans / Stops / More (NavigationBar in `main.dart`). There is **no Map tab**; the map is embedded inside `stop_detail_screen` via `maplibre_gl` + OpenFreeMap tiles.
+**Bottom nav: 4 tabs** — Home / Plans / Stops / More. No Map tab; the map is embedded inside `stop_detail_screen` via `maplibre_gl` + OpenFreeMap tiles.
 
-## Key conventions and gotchas
+## Key Conventions and Gotchas
 
-- **Offline-first**: all writes enqueue to `action_queue`; `TripProvider` falls back to cache on network failure.
-- **Schema discipline**: Do NOT create, alter, or add columns/tables to Directus collections (or any backend schema) unless explicitly instructed by the user. Flag the schema need in plan/doc instead.
-- **Error handling**: most service methods catch exceptions and `debugPrint()` — no user-facing retry except the `sync_log_screen` (retry/clear failed actions).
-- **Auth token**: stored in `SecureStorageService` (`flutter_secure_storage`), NOT SharedPreferences. On 401 the interceptor deletes the token and emits `onUnauthorized`. No auto-redirect to login.
+- **Offline-first**: all writes enqueue to `outbox_actions`; `TripRepository`/`TripProvider` fall back to cache on network failure (though see Repository Layer's in-memory-only trip cache gap).
+- **Schema discipline**: Do NOT create, alter, or add columns/tables to Directus collections (or any backend schema) unless explicitly instructed. Flag the schema need in plan/doc instead.
+- **Error handling**: many service methods still catch exceptions and only `debugPrint()` — no user-facing surfacing except `sync_log_screen`. Critical actions (departure, arrival, invoice confirmation, SOS) deserve more visible pending/failed states.
+- **Auth token**: stored in `SecureStorageService`, not SharedPreferences. On 401, `AuthRefreshInterceptor` attempts a single-flight silent re-auth before falling back to logout. See Decisions section re: the stored-password-hash approach.
 - **Stop status values**: `Fulfilled`, `Not Fulfilled`, `Fulfilled with Returns`, `Fulfilled with Concerns`.
 - **Trip statuses** (driver transitions): `For Dispatch` → `For Inbound` (depart) → `For Clearance` (arrive base). Others (`For Approval`/`Posted`/`Cancelled`) are dispatcher-only.
-- **Confirmation dialogs**: required for SOS, Arrive, Depart (`_showActionDialog` pattern with optional remarks field).
+- **Confirmation dialogs**: required for SOS, Arrive, Depart. SOS should distinguish "queued" (offline/pending sync) vs. "sent" (confirmed synced) in success messaging.
 - **Drift codegen**: editing `lib/db/app_database.dart` or `lib/db/tables/*` requires regenerating `*.g.dart`:
   ```bash
   dart run build_runner build --delete-conflicting-outputs
   ```
 - **Deprecated `fleet-emergency-app`** legacy code is absorbed into `SosScreen` + `EmergencyService` + `EmergencyReport`.
+- **Code style** (Dart/Flutter general hygiene, matches existing `provider`-based patterns — do not introduce Riverpod/Freezed/Hooks per Decisions section): `const` constructors where possible; descriptive booleans (`isLoading`, `hasError`, `canSubmit`); trailing commas on multi-line widget trees; `errorBuilder` on network images; `ListView.builder` for long lists; explicit `textCapitalization`/`keyboardType`/`textInputAction` on `TextField`s; `log` over `print`/`debugPrint` for new debugging code. Match each file's existing convention (e.g. `_buildX()` methods vs. private widget classes) rather than converting a file's style as a side effect of an unrelated change.
 
 ## Verification
 
 ```bash
 flutter pub get
-flutter analyze          # flutter_lints ^6.0.0 (default rules)
+flutter analyze          # flutter_lints ^6.0.0 — has timed out in some environments; if so, note it and proceed with manual/device verification rather than blocking on it
 dart format lib/
 # After editing Drift tables / app_database:
 dart run build_runner build --delete-conflicting-outputs
 ```
+
+**For anything touching the outbox, sync, GPS, or auth-refresh logic**: `flutter analyze` passing and a source-code description of the fix are not sufficient sign-off. Provide at least one of: an actual `outbox_actions` query result from a real or emulated run, a device log excerpt, or a test assertion result.

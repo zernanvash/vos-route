@@ -17,9 +17,10 @@ import '../sync/request_builders/upload_pod_builder.dart';
 import '../sync/request_builders/update_stop_status_builder.dart';
 
 class ActionQueueService {
-  final ApiService _api = ApiService();
-  final AppDatabase _db = AppDatabase();
-  final OutboxDao _dao = OutboxDao(AppDatabase());
+  final ApiService _api;
+  final AppDatabase _db;
+  final OutboxDao _dao;
+  final UploadService _uploadService;
   final Connectivity _connectivity = Connectivity();
   StreamSubscription? _connectivitySub;
   Timer? _processTimer;
@@ -27,6 +28,16 @@ class ActionQueueService {
 
   static const _maxRetries = 5;
   static const _processInterval = Duration(seconds: 10);
+
+  ActionQueueService({
+    ApiService? api,
+    AppDatabase? database,
+    OutboxDao? dao,
+    UploadService? uploadService,
+  }) : _api = api ?? ApiService(),
+       _db = database ?? AppDatabase(),
+       _dao = dao ?? OutboxDao(database ?? AppDatabase()),
+       _uploadService = uploadService ?? UploadService();
 
   void start() {
     _connectivitySub = _connectivity.onConnectivityChanged.listen((result) {
@@ -64,10 +75,10 @@ class ActionQueueService {
 
     _isProcessing = true;
     try {
-      await _processGpsBatches();
       await _processPendingNonGpsByPriority(1);
       await _processPendingNonGpsByPriority(2);
       await _processPendingNonGpsByPriority(3);
+      await _processGpsBatches();
     } finally {
       _isProcessing = false;
     }
@@ -197,8 +208,7 @@ class ActionQueueService {
       folderUuid = '13954431-1352-421b-8bcd-d41963b3d9bd'; // Trip photo folder
     }
 
-    final uploadService = UploadService();
-    final directusFileId = await uploadService.uploadFile(
+    final directusFileId = await _uploadService.uploadFile(
       localFilePath,
       folderUuid: folderUuid,
     );
@@ -209,6 +219,7 @@ class ActionQueueService {
 
     payload.remove('local_file_path');
     payload['directus_uuid'] = directusFileId;
+    payload['uploaded_at'] = DateTime.now().toUtc().toIso8601String();
 
     // Update outbox with the new payload
     await _db.customStatement(
@@ -291,6 +302,7 @@ class ActionQueueService {
                 status: status as String,
                 remarks: remarks as String?,
                 driverUserId: driverUserId,
+                invoiceAt: payload['invoiceAt'] as String,
               );
             }
             // Other stop update (has other_stop_id)
@@ -333,7 +345,8 @@ class ActionQueueService {
 
       case 'update_orders_departure':
         if (payload is Map<String, dynamic>) {
-          final orderNos = (payload['order_nos'] as List?)?.cast<String>() ?? [];
+          final orderNos =
+              (payload['order_nos'] as List?)?.cast<String>() ?? [];
           if (orderNos.isNotEmpty) {
             return {
               'path': '/items/sales_order',
@@ -377,8 +390,9 @@ class ActionQueueService {
               'method': 'POST',
               'body': {
                 'trip_id': tripId as int,
-                'file': directusFileId as String,
+                'directus_uuid': directusFileId as String,
                 'type': type as String,
+                'uploaded_at': payload['uploaded_at'] as String,
               },
             };
           }

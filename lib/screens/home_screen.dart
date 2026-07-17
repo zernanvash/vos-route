@@ -31,16 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final trip = context.read<TripProvider>();
-      trip.fetchActiveTrip();
-      trip.fetchPendingPlans();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
